@@ -52,7 +52,7 @@ class Trajectory:
         self.end_node = end_node
 
         # helper variables
-        self.ptcl_time_map = {}
+        self.ptcl_time_map = {p.get_time_frame(): p for p in ptcls}
 
         # Post-processed properties. They should not be set in constructor, but be extracted
         # after the trajectory is fully built.
@@ -355,8 +355,8 @@ class Trajectory:
             if p1.time_frame == p2.time_frame:
                 # Multiple particles exists for the same time frame.
                 Logger.error("Fail to calculate velocity. Multiple particles " \
-                             "exist in this trajectory at the same time frame: " \
-                             "{:d}".format(self.id))
+                            f"exist in this trajectory-{self.id} at the same time frame {p1.time_frame}" \
+                            f". {p1.get_id()} {p2.get_id()}")
                 continue
             x1, y1 = p1.get_top_left_position()
             x2, y2 = p2.get_top_left_position()
@@ -441,6 +441,8 @@ class Trajectory:
         for p in self.ptcls:
             sum += p.get_area()
         return sum / len(self.ptcls)
+
+
 
     #def predict_next_location(self) -> List[float]:
     #    """

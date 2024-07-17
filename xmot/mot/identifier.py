@@ -12,7 +12,8 @@ import sys
 
 def identify(dset, imgOutDir, blobsOutFile, modelType="DNN", model=None, train_set=None, device="cuda:0", num_workers=0):
     """
-    Identify particles using specified model.
+    (Deprecated) Identify particles using specified model. This function was originally designed with
+    DNN with in mind, which updates Kalman Filters at each frame.
 
     Attributes:
         dset          : Dataset  Instance of the video wrapper class Dataset.
@@ -66,7 +67,7 @@ def identify(dset, imgOutDir, blobsOutFile, modelType="DNN", model=None, train_s
         print("Folder already exists, overwriting contents ... ")
 
     Logger.detail("Detecting particles ...")
-    
+
     for i in range(dset.length()-1):
         img = dset.get_img(i)
         # For return type, see:
@@ -74,7 +75,7 @@ def identify(dset, imgOutDir, blobsOutFile, modelType="DNN", model=None, train_s
         # bbox: FloatTensor[N, 4]
         # mask: UInt8Tensor[num_particle, 1, height, width]
         bbox, mask = model.predict(img)
-        
+
         if len(bbox) == 0: # No particles have been detected in this frame
             # Still write images out.
             cv.imwrite("{:s}/{:s}_{:d}.jpg".format(imgOutDir, modelType, i), img)
@@ -89,14 +90,14 @@ def identify(dset, imgOutDir, blobsOutFile, modelType="DNN", model=None, train_s
         else:
             cur = img
             nxt = dset.get_img(i+1)
-        flow = cv.calcOpticalFlowFarneback(cur,nxt, None, pyr_scale=0.5, levels=5, 
+        flow = cv.calcOpticalFlowFarneback(cur,nxt, None, pyr_scale=0.5, levels=5,
                                            winsize=15, iterations=3, poly_n=5,
                                            poly_sigma=1.2, flags=0)
         mag, ang = cv.cartToPolar(flow[...,0], flow[...,1])
-        
+
         # Merge
         npar = len(bbox)
-        
+
         # Average speed for each particle
         # cen   = np.zeros((npar,2)) # center position
         speed = np.zeros((npar,))  # average speed of entire particle mask
@@ -106,7 +107,7 @@ def identify(dset, imgOutDir, blobsOutFile, modelType="DNN", model=None, train_s
             # indxs = (xx-cen[j,0])**2 + (yy-cen[j,1])**2 <= r*r
             # indxs = np.logical_and(indxs, mask[j,...])
             speed[j] = np.mean(mag[mask[j,0,:,:]])
-        
+
         # normalize speeds (useful for plotting later)
         max_speed = np.max(speed)
         if max_speed != 0:
@@ -115,14 +116,14 @@ def identify(dset, imgOutDir, blobsOutFile, modelType="DNN", model=None, train_s
         th_dist=2
         it =2
         mask, bbox, _ = mergeBoxes(mask, bbox, speed, mag, max_speed, th_speed, th_dist, it)
-        
+
         # Draw bounding boxes
         cont = drawBox(img.copy(), bbox)
 
         # Show final image
         #cv.imshow("Frame", cont)
         cv.imwrite("{:s}/{:s}_{:d}.jpg".format(imgOutDir, modelType, i), cont)
-        
+
         # Kalman tracking
         if "mot" not in locals(): # If have created a MOT object.
             mot = MOT(bbox, mask)
@@ -134,13 +135,6 @@ def identify(dset, imgOutDir, blobsOutFile, modelType="DNN", model=None, train_s
 
         writeBlobs(mot.blobs, blobsOutFile, mot.cnt)
 
-def identify_batch():
-    """Detecting particles from all images first and then group particles into trajectories.
-    
-    TODO: 
-    1. Move the GMM detection code into here as well.
-    """
-    pass
 
 def build_trajectory_batch_GMM(dict_bbox, dict_cnt, images, kalman_dir="./", blobs_out="blobs.txt"):
     """A helper function to prepare variables from GMM detection to build_trajectory_batch().
@@ -178,19 +172,16 @@ def build_trajectory_batch_GMM(dict_bbox, dict_cnt, images, kalman_dir="./", blo
         for cnt in cnts:
             mask = cnt_to_mask(cnt, height, width)
             masks.append(mask)
-        
+
         if len(masks) > 0:
             # Each "mask" is a 4D numpy array. We need to concatenate them along the axis-0 to maintain
             # the mask variable of one image as a 4D array.
             list_masks.append(np.concatenate(masks, axis=0))
         else:
-            list_masks.append(masks) # Add the empty list.
+            # No particles in this image.
+            # Add an empty mask instead of an empty plain list.
+            list_masks.append(np.zeros((0, 1, height, width)))
 
-    # The "asarray" would raise errors becuase of inhomogeneous dimensions (i.e. different number
-    # of particles for each image).
-    # list_bboxes = np.asarray(list_bboxes)
-    # list_masks = np.asarray(list_masks)
-    
     build_trajectory_batch(list_bboxes, list_masks, images,
                            kalman_dir=kalman_dir, model_type="GMM", blobs_out=blobs_out)
 
@@ -204,41 +195,45 @@ def build_trajectory_batch(bboxes, masks, images, kalman_dir="./", model_type="G
                                    be in the list.
         masks   List[numpy.array]: List of masks of each particle in all images.
                                    Shape: [N_images, N_particles, 1, height, width]
+                                   The third dimension is color channel. Binary is 1. RGB would be 3.
                                    Areas of objects have value 1, and the background has value 0.
         images        numpy.array: List of images. Shape: [N_images, height, width, channel*]. For now,
                                    only pass in grayscale images since we primarily use this function
                                    with GMM detection results.
         blob_out              str: Path of file writing blobs to.
-        
+
     Returns:
         None
     """
     if not os.path.exists(kalman_dir):
         os.makedirs(kalman_dir)
 
+    result = {}  # Dict of blobs with keys being frame ID after kalman filters.
     for i, (bbox, mask, img) in enumerate(zip(bboxes, masks, images)):
-        # Skip if no particles have been detected in the image.
-        if len(bbox) == 0:
+        # bbox: FloatTensor[N, 4]
+        # mask: UInt8Tensor[num_particle, 1, height, width]
+
+        if len(bbox) == 0:  # Don't skip Kalman filter step even if no particle in this frame.
             Logger.detail(f'KALMAN: No particle has been detected in frame-{i}.')
-            continue
+            # continue
         mask = mask.astype(bool) # 1 -> True, 0 -> False
-        
+
         # optical flow
-        if i < len(bboxes) - 1: # Not the last frame
+        if len(bbox) != 0 and i < len(bboxes) - 1: # Not the last frame
             if len(img.shape)==3:
                 cur = cv.cvtColor(img,cv.COLOR_BGR2GRAY)
                 nxt = cv.cvtColor(images[i+1], cv.COLOR_BGR2GRAY)
             else:
                 cur = img
                 nxt = images[i+1]
-            flow = cv.calcOpticalFlowFarneback(cur, nxt, None, pyr_scale=0.5, levels=5, 
+            flow = cv.calcOpticalFlowFarneback(cur, nxt, None, pyr_scale=0.5, levels=5,
                                                winsize=15, iterations=3, poly_n=5,
                                                poly_sigma=1.2, flags=0)
             mag, ang = cv.cartToPolar(flow[...,0], flow[...,1])
-            
+
             # Merge
             npar = len(bbox)
-            
+
             # Average speed for each particle
             # cen   = np.zeros((npar,2)) # center position
             speed = np.zeros((npar,)) # 1D array with length npar
@@ -248,7 +243,7 @@ def build_trajectory_batch(bboxes, masks, images, kalman_dir="./", model_type="G
                 # indxs = (xx-cen[j,0])**2 + (yy-cen[j,1])**2 <= r*r
                 # indxs = np.logical_and(indxs, mask[j,...])
                 speed[j] = np.mean(mag[mask[j,0,:,:]]) # average speed of entire particle mask
-            
+
             # normalize speeds (useful for plotting later)
             max_speed = np.max(speed)
             if max_speed != 0:
@@ -257,16 +252,16 @@ def build_trajectory_batch(bboxes, masks, images, kalman_dir="./", model_type="G
             th_dist=2
             it =2
             mask, bbox, _ = mergeBoxes(mask, bbox, speed, mag, max_speed, th_speed, th_dist, it)
-            
+
             # Draw bounding boxes
             # cont = drawBox(img.copy(), bbox)
 
             # Show final image
             # cv.imshow("Frame", cont)
             # cv.imwrite("{:s}/{:s}_{:d}.jpg".format(imgOutDir, model_type, i), cont)
-        
+
         # Kalman tracking
-        if "mot" not in locals(): # If have created a MOT object.
+        if "mot" not in locals(): # If haven't created a MOT object.
             mot = MOT(bbox, mask)
         else: # Use the existing MOT object.
             mot.step(bbox, mask)
@@ -275,4 +270,7 @@ def build_trajectory_batch(bboxes, masks, images, kalman_dir="./", model_type="G
         img_kalman = drawBlobs(img.copy(), mot.blobs)
         cv.imwrite("{:s}/{:s}_{:d}.jpg".format(kalman_dir, model_type, i), img_kalman)
 
-        writeBlobs(mot.blobs, blobs_out, mot.cnt)
+        # Write out frame by frame for inspection and debugging.
+        writeBlobs(mot.blobs, blobs_out, mot.frame_id)
+
+    return result

@@ -24,14 +24,14 @@ def imosaic(img_list, size=None, gray=False):
     Final image mosaic (H, W, C)
 
     '''
-    
+
     # concat columns in every row
     rows = []
     for row in img_list:
         proc_list = []
         for temp in row:
             nc = len(temp.shape) # 2 for gray image, 3 for color
-            
+
             # if color image but need to convert to gray
             if nc == 3 and gray:
                 proc_list.append(cv.cvtColor(temp, cv.COLOR_BGR2GRAY))
@@ -42,10 +42,10 @@ def imosaic(img_list, size=None, gray=False):
             else:
                 proc_list.append(temp)
         rows.append(np.concatenate(proc_list, axis=1))
-    
+
     # concat all the rows
     output = np.concatenate(rows, axis=0)
-    
+
     # resize to desired output size
     if size is not None:
         output = cv.resize(output, size)
@@ -70,7 +70,7 @@ def drawBox(img, bbox, color=(0,0,255)):
         x1,y1,x2,y2 = bbox[j]
         x1,y1,x2,y2 = map(int,[x1,y1,x2,y2])
         cv.rectangle(img, (x1, y1), (x2, y2), color, 2)
-    
+
     return img
 
 def drawBlobs(img, blobs):
@@ -141,49 +141,49 @@ def cor2cen(bbox):
     ceny = (bbox[1] + bbox[3])/2.
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
-    
+
     return cenx,ceny,w,h
 
 def cen2cor(cenx,ceny,w,h):
     '''
     Convert bounding box center coordinates of the form (cenx, ceny, w, h) to
     edge coordinates of the form (x1,y1,x2,y2)
-    
+
     '''
     hw = w/2.
     hh = h/2.
-    
+
     x1 = cenx - hw
     x2 = cenx + hw
     y1 = ceny - hh
     y2 = ceny + hh
-    
+
     return x1,y1,x2,y2
 
-def costCalc(bbox, blobs, fixed_cost=100.):
+def costMatrix(bbox, blobs, fixed_cost=100.):
     boxlen = len(bbox)
     blolen = len(blobs)
-    
+
     # size of cost array twice the largest
     # that way every blob can be deleted and new bbox can be created
     length = 2*max(boxlen, blolen)
-    cost = np.ones((length,length), dtype=np.float64) * fixed_cost
-    
+    cost = np.ones((length, length), dtype=np.float64) * fixed_cost
+
     # Calculate cost
     for i in range(boxlen):
         for j in range(blolen):
             cenx1,ceny1,w1,h1 = cor2cen(bbox[i])
             cenx2,ceny2,w2,h2 = cor2cen(blobs[j].bbox)
-            
+
             # eucledian distance
             cost[i][j] = np.sqrt( (cenx1 - cenx2)**2 + (ceny1 - ceny2)**2 )
-    
+
     return cost
 
 def iou(bbox1, bbox2):
     '''
     Intersection over union for two bounding boxes
-    
+
     see: https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
 
     Parameters
@@ -200,19 +200,19 @@ def iou(bbox1, bbox2):
     y1 = max(bbox1[1],bbox2[1])
     x2 = min(bbox1[2],bbox2[2])
     y2 = min(bbox1[3],bbox2[3])
-    
+
     aint = max(0, x2 - x1 + 1.) * max(0, y2 - y1 + 1.)
     a1   = (bbox1[2] - bbox1[0] + 1.) * (bbox1[3] - bbox1[1] + 1.)
     a2   = (bbox2[2] - bbox2[0] + 1.) * (bbox2[3] - bbox2[1] + 1.)
 
     iou = aint/(a1 + a2 - aint)
-    
+
     return iou
 
 def iom(bbox1, bbox2):
     '''
     Intersection over min for two bounding boxes
-    
+
     see: https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
 
     Parameters
@@ -229,13 +229,13 @@ def iom(bbox1, bbox2):
     y1 = max(bbox1[1],bbox2[1])
     x2 = min(bbox1[2],bbox2[2])
     y2 = min(bbox1[3],bbox2[3])
-    
+
     aint = max(0, x2 - x1 + 1.) * max(0, y2 - y1 + 1.)
     a1   = (bbox1[2] - bbox1[0] + 1.) * (bbox1[3] - bbox1[1] + 1.)
     a2   = (bbox2[2] - bbox2[0] + 1.) * (bbox2[3] - bbox2[1] + 1.)
 
     iom = aint/min(a1, a2)
-    
+
     return iom
 
 def unionBlob(blob1, blob2):
@@ -253,13 +253,13 @@ def unionBlob(blob1, blob2):
     '''
     # Average posteior state
     blob1.kalm.statePost = (blob1.kalm.statePost + blob2.statePost())/2.
-    
+
     # update bbox
     state      = blob1.kalm.statePost
     blob1.bbox = np.array(cen2cor(state[0],state[1],state[2],state[3]))
-    
+
     # stub
-    # modify frames and dead 
+    # modify frames and dead
     return blob1
 
 
@@ -398,10 +398,10 @@ def mergeBoxes(mask, bbox, speed, mag, max_speed, th_speed, th_dist, it):
 def merge_with_BGMM(bbox, mask, mag):
     bbox_new = []
     mask_new = []
-    
+
     z = np.zeros((len(bbox),1))
     bbox_wspeed = np.hstack((bbox, z))
-    
+
     bgm = BayesianGaussianMixture(n_components=len(bbox), max_iter=10).fit(bbox_wspeed) # Dirichlet process
     asg = bgm.predict(bbox_wspeed) # cluster assignments
     uid = np.unique(asg) # unique clusters
@@ -414,7 +414,7 @@ def merge_with_BGMM(bbox, mask, mag):
             temp_mask = unionMask(temp_mask, mask[indx[j],...])
         bbox_new.append(temp_box)
         mask_new.append(temp_mask)
-    
+
     mask_new = np.array(mask_new)
     bbox_new = np.array(bbox_new)
     return bbox_new, mask_new
@@ -424,7 +424,7 @@ def filterBbox(list_bbox: List[List[int]], list_cnt: List[np.ndarray]= None):
     Postprocessing of list of bboxes and corresponding contours (in OpenCV format).
 
     Current filters:
-    1. Check enclosement. 
+    1. Check enclosement.
         If a smaller bbox is completed enclosed within a larger bbox, remove
         the smaller bbox from the list.
         TODO: Make the smaller bbox a bubble of the larger particle.
@@ -434,7 +434,7 @@ def filterBbox(list_bbox: List[List[int]], list_cnt: List[np.ndarray]= None):
         print(f"Warning: Number of bbox and contours don't match. {len(list_cnt)} {len(list_bbox)}")
 
     to_remove = np.zeros(len(list_bbox), dtype=bool)
-    
+
     for i in range(0, len(list_bbox)):
         if to_remove[i]:
             continue
@@ -450,7 +450,7 @@ def filterBbox(list_bbox: List[List[int]], list_cnt: List[np.ndarray]= None):
                     to_remove[j] = True
                 else:
                     to_remove[i] = True
-    
+
     ret_bbox = [list_bbox[i] for i in range(len(list_bbox)) if not to_remove[i]]
     ret_cnt = None
     if list_cnt != None:
@@ -468,12 +468,12 @@ def cnt_to_mask(cnt, height, width):
                 Somehow, cv.findcontours() returns a tuple of contours
                 and each contour is a 3D NumPy array with one redundant dimension in the
                 middle.
-                E.g. contours[0]: 
+                E.g. contours[0]:
                 array([[[50, 50]],
                        [[50, 100]],
                        [[100, 100]],
                        [[100, 50]]], dtype=int32)
-    
+
     Return:
         mask:   numpy.ndarray in the same shape of PyTorch predictions. [n, 1, height, width]
     """

@@ -125,7 +125,7 @@ class Digraph:
 
     def __detect_events(self):
         """
-        Loop repeatively to merge nodes into events: collision and micro-explosion.
+        (Deprecated) Loop repeatively to merge nodes into events: collision and micro-explosion.
         """
         # micro-explosion
         sorted_trajs = []
@@ -204,10 +204,10 @@ class Digraph:
         A simpler function to merge nodes to form events. Use a nested loop to compare
         pairwisely the distance between nodes in time and space.
 
-        The rule must be obeyed  merging: A start node of a trajecotry must start earlier in time
+        The rule must be obeyed for merging: A start node of a trajecotry must start earlier in time
         than its end node.
 
-        This rule evolves two practical checks:
+        This rule brings up two practical checks:
         1. For a trajectory start earlier in time, its start node cannot be merged with
            end nodes of a trajectory that starts later in time.
         2. The end node of a trajectory A can't be merged with the start node of a trajectory B whose
@@ -221,6 +221,7 @@ class Digraph:
             if self.trajs[i].get_start_time() == 0:
                 continue
             for j in range(i + 1, len(self.trajs)):
+                # t_j always starts no ealier than t_i.
                 t_i = self.trajs[i]
                 t_j = self.trajs[j]
 
