@@ -271,6 +271,6 @@ def build_trajectory_batch(bboxes, masks, images, kalman_dir="./", model_type="G
         cv.imwrite("{:s}/{:s}_{:d}.jpg".format(kalman_dir, model_type, i), img_kalman)
 
         # Write out frame by frame for inspection and debugging.
-        writeBlobs(mot.blobs, blobs_out, mot.frame_id)
+        writeBlobs(mot.blobs, blobs_out, i)  # i == mot.frame_id, ID of the current frame
 
     return result

@@ -161,10 +161,10 @@ class MOT:
         for i in range(boxlen):
             m   = np.array(cor2cen(bbox[i]), dtype=np.float32)
             ind = blob_ind[i]
-            if ind < self.blolen:  # New bbox match one of the existing blob.
+            if ind < self.blolen:  # Detected bbox match one of the existing blob.
                 self.blobs[ind].correct(m, mask[i])
                 self.blobs[ind].dead = 0  # Recount the number of undetected frames.
-            else:  # New bbox don't match any of the existing blob.
+            else:  # Detected bbox don't match any of the existing blob.
                 # blob.idx starts from 1.
                 b = Blob(self.total_blobs + len(new_blobs) + 1, bbox[i], mask[i])
                 b.frames.append(self.frame_id)
@@ -176,7 +176,7 @@ class MOT:
         boxlen  = len(bbox)
         ind_del = []
         for i in range(boxlen, len(blob_ind)):
-            if blob_ind[i] < boxlen:
+            if blob_ind[i] < self.blolen:
                 # Existing blob with blob_ind[i] does not match with any of the bboxes
                 # in the new frame. Otherwise, blob_ind[i] should be the id of that new bbox,
                 # which is smaller than boxlen.
@@ -185,7 +185,7 @@ class MOT:
         return ind_del
 
     def __delBlobs(self, ind_del):
-        # sort to start removing from the end
+        # sort first and then start removing from the end
         ind_del.sort(reverse=True)
         for ind in ind_del:
             self.blobs[ind].dead += 1
