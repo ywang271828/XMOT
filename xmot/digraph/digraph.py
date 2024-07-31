@@ -201,7 +201,7 @@ class Digraph:
 
     def __detect_events2(self):
         """
-        A simpler function to merge nodes to form events. Use a nested loop to compare
+        A simpler function to merge nodes and form events. Use a nested loop to compare
         pairwisely the distance between nodes in time and space.
 
         The rule must be obeyed for merging: A start node of a trajecotry must start earlier in time

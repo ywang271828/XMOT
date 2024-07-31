@@ -19,7 +19,7 @@ def subtract_brightfield_by_scaling(img_video, img_bf, scale = 0.8, shift_back=F
     img_video_invert = cv.bitwise_not(img_video)
     bf_mode = mode(img_bf_invert, axis=None).mode
     video_mode = mode(img_video_invert, axis=None).mode
-    factor = scale * video_mode / bf_mode # Make the peak of histogram of the brightfield 
+    factor = scale * video_mode / bf_mode # Make the peak of histogram of the brightfield
                                           # 0.8 to that of the video.
     # Scaling the peak of the pixel distribution of the brightfield image relative to that
     # of the video image.
@@ -49,7 +49,7 @@ def subtract_brightfield_by_shifting(img_video: np.ndarray, img_bf: np.ndarray, 
     img_video_invert = cv.bitwise_not(img_video)
     bf_invert_mode = mode(img_bf_invert, axis=None).mode
     video_invert_mode = mode(img_video_invert, axis=None).mode
-    
+
     # Shfit the peak of the pixel distribution of bf image to align with that of the video.
     shift = bf_invert_mode - scale * video_invert_mode
     img_bf_invert_shifted = np.array(img_bf_invert - shift, dtype=np.uint8)
@@ -85,10 +85,17 @@ def subtract_brightfield(orig_images: List[np.ndarray], image_brightfield: np.nd
         if not use_scale:
             # This is the default option. Simply shift the brightfield image rather than changing
             # the shape of the pixel histogram
-            img_subtracted, *_ = sbf_shifting(img, img_bf, scale=scale, shift_back=shift_back)
-    
+            img_subtracted, *_ = subtract_brightfield_by_shifting(img, img_bf, scale=scale, shift_back=shift_back)
+
 
 def get_contour_center(cnt) -> List[int]:
+    """
+    Compute the coordinates of the centroid of the contour.
+
+    Args:
+        cnt:  Contour of the particle in openCV format, with dimension (N, 1, 2) where N is the
+              number of anchor points of the contour.
+    """
     moments = cv.moments(cnt) # OpenCV contour object: numpy.ndarray of shape (n, 1, 2)
     center_x = int(moments["m10"] / moments['m00'])
     center_y = int(moments["m01"] / moments['m00'])
@@ -114,7 +121,7 @@ def load_images_from_dir(dir, start_id=0, end_id=sys.maxsize, ext=None, grayscal
         files = [f for f in files if f.endswith(ext)]
     else:
         files = [f for f in os.listdir(dir) if f.endswith(ext)]
-    
+
     files = natsort.natsorted(files)
     #files.sort(key=lambda f: int(re.match(".*_([a-zA-Z]*)([0-9]+)\.([a-z]+)", f).group(2)))
     if re.match(IMAGE_FILE_PATTERN, files[0]) is not None:

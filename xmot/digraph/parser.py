@@ -16,7 +16,7 @@ Parser of xmot.digraph.particle in different formats.
 def load_blobs_from_excel(file_name: str) -> List[Particle]:
     """ A temporary io function to load data from Kerri-Lee's excel data.
 
-    The function assumes a specific format of the excel data, and will be replaced by more 
+    The function assumes a specific format of the excel data, and will be replaced by more
     general format later.
     """
     data_id = pd.read_excel(file_name, sheet_name="Particle ID", engine="openpyxl")
@@ -37,12 +37,12 @@ def load_blobs_from_excel(file_name: str) -> List[Particle]:
 
         time_frame = row_id["Act_frame"]
         # Iterate all particles ided in this frame
-        for j in range(1, len(row_id)):   
+        for j in range(1, len(row_id)):
             id = row_id[j]
             pos = [row_pos[2 * id], row_pos[2 * id + 1]]
             # Has no bubble info and predicted positions for now.
             particles.append(Particle(id, time_frame, pos))
-    
+
     return particles
 
 def load_blobs_from_text(file_name: str, img_height=commons.PIC_DIMENSION[0], img_width=commons.PIC_DIMENSION[1]) -> List[Particle]:
@@ -125,7 +125,7 @@ def parse_pascal_xml(file_path: str, area_threshold=config.AREA_THRESHOLD) -> Tu
         p = Particle(position=[xmin, ymin], bbox=[xmax - xmin, ymax - ymin],
                      type=p_type, shape=p_shape, bubble=p_bubble)
         particles.append(p)
-    
+
     # sort in ascending order of y (row-index of numpy), and then x (column-index of numpy).
     particles.sort(key=lambda p: p.get_top_left_position_reversed())
     obj = re.match(".*_([0-9]+)_([a-zA-Z]*)([0-9]+)\.([a-zA-Z]+)", file_name)
@@ -140,7 +140,6 @@ def parse_pascal_xml(file_path: str, area_threshold=config.AREA_THRESHOLD) -> Tu
             p.set_time_frame(image_id)
             id += 1
     return particles, file_name
-        
 
-    
-    
+
+

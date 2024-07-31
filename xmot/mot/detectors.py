@@ -235,8 +235,8 @@ class GMM:
             skip_nested    : bool     Whether remove nested contours from the returned list.
         Return:
             1. dict of list of bboxes in each image, with frame_id (image id) as key.
-               When no particles above the threshold are detected, an empty list is added as
-               a place holder, making sure there's a list corresponding to each image.
+               When no particles above the threshold are detected, an empty list will be added
+               making sure there's a list corresponding to each image.
             2. dict of list of contours in each images, with frame id as key. The contours in each list
                match the order of corresponding bbox in the lists of the first dict.
         """

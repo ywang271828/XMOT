@@ -1,5 +1,5 @@
 import cv2 as cv
-from xmot.mot.utils import drawBox, drawBlobs, writeBlobs, mergeBoxes, cnt_to_mask
+from xmot.mot.utils import drawBox, drawBlobs, state_from_mask, writeBlobs, mergeBoxes, cnt_to_mask
 from xmot.mot.kalman import MOT
 from xmot.mot.detectors import DNN, GMM
 from xmot.datagen.bead_gen import bead_data_to_file, BeadDatasetFile, collate_fn
@@ -133,7 +133,7 @@ def identify(dset, imgOutDir, blobsOutFile, modelType="DNN", model=None, train_s
         img_kalman = drawBlobs(img.copy(), mot.blobs)
         cv.imwrite("{:s}/{:s}_{:d}.jpg".format(kalman_dir, modelType, i), img_kalman)
 
-        writeBlobs(mot.blobs, blobsOutFile, mot.cnt)
+        writeBlobs(mot.blobs, blobsOutFile, i)
 
 
 def build_trajectory_batch_GMM(dict_bbox, dict_cnt, images, kalman_dir="./", blobs_out="blobs.txt"):
@@ -142,13 +142,14 @@ def build_trajectory_batch_GMM(dict_bbox, dict_cnt, images, kalman_dir="./", blo
     Sanity checks are performed to ensure there's one list of bboxes for each image, and the numbers
     of particles in an image are equal as in list of bboxes and masks.
     """
-    # When there's no bounding boxes, there would still be an empty list.
+    # For each frame, there must be a bbox list or contour list. But they can be empty when
+    # there are no detected particles.
     list_bboxes = [np.array(dict_bbox[i]) for i in sorted(dict_bbox.keys())]
     list_cnts = [dict_cnt[i] for i in sorted(dict_cnt.keys())]
     height = images[0].shape[0]
     width = images[0].shape[1]
 
-    # Sanity checks. In case we encontour strange errors hard to trace to the true source of errors.
+    # Sanity checks. To prevent we encontour strange errors hard to trace to the true source of errors.
     if len(list_bboxes) != len(list_cnts) or len(list_bboxes) != len(images):
         Logger.error('KALMAN: Number of images not equal in list of bboxes, contours and images! '\
                      + f'{len(list_bboxes)} {len(list_cnts)} {len(images)}')
@@ -180,7 +181,7 @@ def build_trajectory_batch_GMM(dict_bbox, dict_cnt, images, kalman_dir="./", blo
         else:
             # No particles in this image.
             # Add an empty mask instead of an empty plain list.
-            list_masks.append(np.zeros((0, 1, height, width)))
+            list_masks.append(np.zeros((0, 1, height, width)))  # an empty ndarray, but has a nontrivial shape
 
     build_trajectory_batch(list_bboxes, list_masks, images,
                            kalman_dir=kalman_dir, model_type="GMM", blobs_out=blobs_out)
@@ -208,14 +209,22 @@ def build_trajectory_batch(bboxes, masks, images, kalman_dir="./", model_type="G
     if not os.path.exists(kalman_dir):
         os.makedirs(kalman_dir)
 
-    result = {}  # Dict of blobs with keys being frame ID after kalman filters.
+    # Since writeBlobs() using append mode, remove file if it already exists.
+    if os.path.exists(blobs_out):
+        os.remove(blobs_out)
+
+    result = None  # List of Blobs constructed from Mot
     for i, (bbox, mask, img) in enumerate(zip(bboxes, masks, images)):
         # bbox: FloatTensor[N, 4]
         # mask: UInt8Tensor[num_particle, 1, height, width]
 
-        if len(bbox) == 0:  # Don't skip Kalman filter step even if no particle in this frame.
+        # We cannot skip even if there is no particle in this frame since Kalman filters still need
+        # to be udpated. Trajectories need to terminate properly.
+        if len(bbox) == 0:
             Logger.detail(f'KALMAN: No particle has been detected in frame-{i}.')
             # continue
+
+        # When there is no particle, mask will be 'array([], shape=(0, 1, 2, 2), dtype=bool)'
         mask = mask.astype(bool) # 1 -> True, 0 -> False
 
         # optical flow
@@ -261,10 +270,14 @@ def build_trajectory_batch(bboxes, masks, images, kalman_dir="./", model_type="G
             # cv.imwrite("{:s}/{:s}_{:d}.jpg".format(imgOutDir, model_type, i), cont)
 
         # Kalman tracking
+        states = []
+        for m in mask:
+            *_center, _width, _height = state_from_mask(m)
+            states.append([*_center, _width, _height])
         if "mot" not in locals(): # If haven't created a MOT object.
-            mot = MOT(bbox, mask)
+            mot = MOT(states, mask)
         else: # Use the existing MOT object.
-            mot.step(bbox, mask)
+            mot.step(states, mask)
 
         # Draw kalman filter blobs
         img_kalman = drawBlobs(img.copy(), mot.blobs)
@@ -272,5 +285,7 @@ def build_trajectory_batch(bboxes, masks, images, kalman_dir="./", model_type="G
 
         # Write out frame by frame for inspection and debugging.
         writeBlobs(mot.blobs, blobs_out, i)  # i == mot.frame_id, ID of the current frame
+
+        result = mot.blobs_all
 
     return result

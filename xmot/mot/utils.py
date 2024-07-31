@@ -6,9 +6,11 @@ Utility functions
 import numpy as np
 import cv2 as cv
 import math
-from typing import List
+import json
+from typing import List, Tuple
 from xmot.logger import Logger
 from sklearn.mixture import BayesianGaussianMixture
+from xmot.utils.image_utils import get_contour_center
 
 def imosaic(img_list, size=None, gray=False):
     '''
@@ -75,7 +77,7 @@ def drawBox(img, bbox, color=(0,0,255)):
 
 def drawBlobs(img, blobs):
     for j in range(len(blobs)):
-        x1,y1,x2,y2 = blobs[j].bbox
+        x1,y1,x2,y2 = blobs[j].get_bbox(frame_id = -1) # Most recent frame
         x1,y1,x2,y2 = map(int,[x1,y1,x2,y2])
         color       = blobs[j].color
         color       = (int(color[0]), int(color[1]), int(color[2]))
@@ -85,17 +87,22 @@ def drawBlobs(img, blobs):
     return img
 
 def writeBlobs(blobs, file, frameID):
+    """
+    Output positions and bbox dimension (Kalman filters' states) at each frame.
+    """
     with open(file, "a") as f:
         for i in range(len(blobs)):
             #Logger.debug("Number of frames for this blob: {:d}".format(
             #    len(blobs[i].frames)))
-            x1,y1,x2,y2 = blobs[i].bbox
-            x1,y1,x2,y2 = map(int,[x1,y1,x2,y2])
-            w = x2 - x1
-            h = y2 - y1
+            #x1,y1,x2,y2 = blobs[i].bbox
+            #x1,y1,x2,y2 = map(int,[x1,y1,x2,y2])
+            #w = x2 - x1
+            #h = y2 - y1
+            x, y, w, h = np.round(blobs[i].state).astype(np.int32).tolist()
             idx = blobs[i].idx
-            #frames = blobs[i].frames
-            f.write(("{:4d}, " * 7 + "{:4d}\n").format(x1, y1, x2, y2, w, h, idx, frameID))
+            cnt_str = json.dumps(blobs[i].contours[frameID].tolist())
+            #frames = blobs[i].frames  # Not used.
+            f.write(("{:4d}; " * 5 + "{:4d}; {:s}\n").format(x, y, w, h, idx, frameID, cnt_str))
             #f.write("{:4d}".format(frameID))
             #f.write(",".join([str(frame) for frame in frames]))
             #f.write("\n")
@@ -160,8 +167,8 @@ def cen2cor(cenx,ceny,w,h):
 
     return x1,y1,x2,y2
 
-def costMatrix(bbox, blobs, fixed_cost=100.):
-    boxlen = len(bbox)
+def costMatrix(states, blobs, fixed_cost=100.):
+    boxlen = len(states)
     blolen = len(blobs)
 
     # size of cost array twice the largest
@@ -172,11 +179,12 @@ def costMatrix(bbox, blobs, fixed_cost=100.):
     # Calculate cost
     for i in range(boxlen):
         for j in range(blolen):
-            cenx1,ceny1,w1,h1 = cor2cen(bbox[i])
-            cenx2,ceny2,w2,h2 = cor2cen(blobs[j].bbox)
+            cenx1,ceny1,w1,h1 = states[i]
+            cenx2,ceny2,w2,h2 = blobs[j].state
 
             # eucledian distance
-            cost[i][j] = np.sqrt( (cenx1 - cenx2)**2 + (ceny1 - ceny2)**2 )
+            cost[i][j] = np.sqrt( (cenx1 - cenx2)**2 + (ceny1 - ceny2)**2 ) \
+                         + abs(w1 - w2) + abs(h1 - h2)
 
     return cost
 
@@ -488,3 +496,53 @@ def cnt_to_mask(cnt, height, width):
                                               # so the first dimension is 1.
     return mask
 
+def mask_to_cnt(mask: np.ndarray) -> Tuple[np.ndarray, int, int]:
+    """Get the contour from a binary mask.
+
+    This function should be the conjugate function of cnt_to_mask(). We can use
+    cv.matchSapes(cnt_1, cnt_2, cv.CONTOURS_MATCH_I1, 0.0) to check shape similarity, and 0.0 means
+    the contours are exactly the same.
+
+    Args:
+        mask: The mask of one particle. It should has the dimension (1, height, width)
+              as those stored in Blob class of Kalman filter, or (1, 1, height, width)
+              as the one directly generated from cnt_to_mask().
+              When mask is an empty array, return an empty contour.
+
+    Return:
+        np.ndarray: One contour in the opencv format, with dimension (N, 1, 2) with N being the
+                    number of anchor points of the contour.
+        int:        image height (rows in numpy array). Not the height of the bbox of the contour.
+        int:        image width (columns in numpy array)
+    """
+    if mask.size == 0: # Empty mask. No detected particle.
+        return np.array([], dtype=np.int32).reshape(0, 1, 2), 0, 0
+
+    mask = np.squeeze(mask)
+    height, width = mask.shape
+    if mask.dtype == np.bool_:
+        mask = mask.astype(np.uint8) * 255  # Make the mask as binary image.
+    contours, hierarchy = cv.findContours(mask, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+
+    # There should be only one contour from the binary mask. Since background is black, there
+    # isn't a contour of the whole image.
+    return contours[0], height, width
+
+def state_from_mask(mask: np.ndarray) -> Tuple[int, int, int, int]:
+    """Get the Kalman filter state from a binary mask.
+
+        Args:
+        mask: The mask of one particle. It should has the dimension (1, height, width)
+              as those stored in Blob class of Kalman filter, or (1, 1, height, width)
+              as the one directly generated from cnt_to_mask().
+
+    Return:
+        int: x of centroid of the contour
+        int: y of centroid of the contour
+        int: width of the bbox of the contour
+        int: height of the bbox of the contour
+    """
+    contour, img_height, img_width = mask_to_cnt(mask)
+    x, y, w, h = cv.boundingRect(contour)
+    centroid_x, centroid_y = get_contour_center(contour)
+    return centroid_x, centroid_y, w, h
