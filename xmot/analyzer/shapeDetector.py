@@ -9,13 +9,13 @@ from xmot.logger import Logger
 LEGIT_CLOSED_CONTOUR_AREA_RATIO = 0.30     # A legit closed contour must take up at least this percentage of the bbox.
 LEGIT_PARTICLE_AREA_RATIO = 0.15 # ?0.15
 LEGIT_CONTOUR_AREA_MIN = 50   # Least permitted area for a contour to be considered as a contour
-                              # of a solid particle. Contours below this value will be considered as 
+                              # of a solid particle. Contours below this value will be considered as
                               # a partial boundary of a hollow shell.
 CONFIDENT_PARTICLE_AREA = 100
 
 BBOX_BUFFER_MIN = 2           # 2 pixels as buffer of bbox for contour detection.
 BBOX_BUFFER_MAX = 5           # Max permitted value of buffer for expanding crop of particle to detect
-                              # a valid contour. (Contour cannot be detected if the particle contact 
+                              # a valid contour. (Contour cannot be detected if the particle contact
                               # the edge of crop of the img)
 PADDING=1                     # White padding crop of particle with 2 pixels to make sure detected
                               # contours don't connect with the borders.
@@ -33,7 +33,7 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
 
     # If particle width and height are 0, the padded area will be a (4 x 5) image.
     if img_crop.shape[0] * img_crop.shape[1] == 2*PADDING * (2*PADDING + 1):
-        Logger.error("Cannot detect shape for particle with zero-sized bbox. " + 
+        Logger.error("Cannot detect shape for particle with zero-sized bbox. " +
                         "Frame: {:d}; ID: {:d}.".format(particle.get_time_frame(), particle.get_id()))
         shape = "undetermined_empty_crop"
 
@@ -41,7 +41,7 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
     blocksize = max(math.ceil(np.average(img_crop.shape)) // 2 * 2 + 1, 31) # Round to the next odd integer.
     img_threshed = adaptive_threshold(img_crop, cv.ADAPTIVE_THRESH_MEAN_C, blocksize = blocksize,
                                     offset = 2, is_grayscale = True)
-    
+
     # Padding to prevent contour touching boundaries
     img_edited = cv.copyMakeBorder(img_threshed, padding, padding, padding, padding, cv.BORDER_CONSTANT, value=255)
 
@@ -72,7 +72,7 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
         if outdir is not None:
             cv.imwrite(f"{outdir}/{prefix}_decision_{particle.get_type()}_{particle.get_shape()}_{shape}.png", _img_debug)
         return shape
-    
+
     # Determine whether the particle is a solid particle or a hollow shell.
     ## Graduately increase buffer until legit contours are found.
     #legit_contours = []
@@ -92,11 +92,11 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
         cnt_areas.append(cv.contourArea(contours[i]))
     cnt_max_area = contours[cnt_areas.index(max(cnt_areas))] # The single contour with the largest area.
     cnt_areas = np.array(cnt_areas)
-    cnt_area_to_bbox_ratios = cnt_areas / particle.get_area_bbox()
+    cnt_area_to_bbox_ratios = cnt_areas / particle.get_contour_bbox_area()
 
     max_area = cnt_areas.max()
     max_cnt_to_bbox_ratio = cnt_area_to_bbox_ratios.max()
-    
+
     if outdir is not None:
         _area_ratio = round(max_cnt_to_bbox_ratio, 3)
         _img_contoured = cv.drawContours(cv.cvtColor(np.copy(img_edited), cv.COLOR_BGR2RGB), [cnt_max_area], -1,
@@ -129,7 +129,7 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
         _img_debug = np.copy(img_edited)
         shape = "non-circle"
     elif len(contours) >= 1 and max_cnt_to_bbox_ratio < LEGIT_PARTICLE_AREA_RATIO:
-        # There are multiple contours and all of them have very small area, suggesting they are 
+        # There are multiple contours and all of them have very small area, suggesting they are
         # contours of broken boundaries of hollow shells, instead of solid particles. Therefore,
         # use Hough circle transformation to determine shape.
         #
@@ -148,11 +148,11 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
         #while(circular_degree >= 0.2):
             circles = cv.HoughCircles(_img_to_detect, cv.HOUGH_GRADIENT, 1, max(img_crop.shape)/10,
                                       param1=_canny_threshold, param2=_accumulator_threshold,
-                                      minRadius = math.floor(min(img_crop.shape)/4), 
+                                      minRadius = math.floor(min(img_crop.shape)/4),
                                       maxRadius = min(img_crop.shape))
             #circles = cv.HoughCircles(_img_to_detect, cv.HOUGH_GRADIENT_ALT, 1, max(img_crop.shape)/10,
             #                          param1=_canny_threshold, param2=_circular_degree,
-            #                          minRadius = math.floor(min(img_crop.shape)/4), 
+            #                          minRadius = math.floor(min(img_crop.shape)/4),
             #                          maxRadius = min(img_crop.shape[0]))
             if circles is not None:
                 break
@@ -176,7 +176,7 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
             #cv.imwrite(f"{outdir}/{prefix}_hough_{round(circular_degree,2)}.png", _img_hough)
             #cv.imwrite(f"{outdir}/{prefix}_hough_threshed_{round(circular_degree, 2)}.png", _img_hough2)
 
-        
+
         #if circular_degree >= THRESHOLD_CIRCULAR_DEGREE:
         #    Logger.debug("Circular degree in Hough for detecting a circle in this hollow sheel "
         #                    "is {:.2f}".format(circular_degree))
@@ -188,8 +188,8 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
             _img_debug = np.copy(img_crop)
             shape = "non-circle" # Cannot find a circle with permitted circular degree larger than
                                  # THRESHOLD_CIRCULAR_DEGREE. It's non-circle.
-    # else: len(contours) > 1 and max_area / particle.get_area_bbox() between LEGIT_PARTICLE_AREA_RATIO and LEGIT_CLOSED_CONTOUR_RATIO
-                
+    # else: len(contours) > 1 and max_area / particle.get_contour_bbox_area() between LEGIT_PARTICLE_AREA_RATIO and LEGIT_CLOSED_CONTOUR_RATIO
+
     # 1. no contour can be detected.
 
     if shape == "":
@@ -198,7 +198,7 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
             shape = "undetermined_too_small"
         else:
             shape = "undetermined"
-    
+
     if outdir is not None:
         cv.imwrite(f"{outdir}/{prefix}_decision_{particle.get_type()}_{particle.get_shape()}_{shape}.png", _img_debug)
     return shape
@@ -237,9 +237,9 @@ def binary_threshold(img, threshold = 90, is_grayscale = False):
     ret, img_threshold = cv.threshold(img, threshold, 255, cv.THRESH_BINARY)
     return img_threshold
 
-def adaptive_threshold(img, method = cv.ADAPTIVE_THRESH_MEAN_C, blocksize = 15, offset = 0, 
+def adaptive_threshold(img, method = cv.ADAPTIVE_THRESH_MEAN_C, blocksize = 15, offset = 0,
                        is_grayscale = False):
-    
+
     if not is_grayscale:
         img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     if img is None or len(img) == 0:
@@ -261,9 +261,9 @@ def crop_particle(particle: Particle, img, buffer = 1):
     slicing does, so we need to check whether they are out of the image before cropping.
     """
     x1, y1, x2, y2 = particle.get_bbox_torch()
-    
+
     # Coordinates of upper left corner of the crop
-    # Add buffer to the bbox to make sure the entire 
+    # Add buffer to the bbox to make sure the entire
     # particle has been enclosed in the bounding
     # box.
     x1 = x1 - buffer if x1 - buffer >= 0 else 0
@@ -271,8 +271,8 @@ def crop_particle(particle: Particle, img, buffer = 1):
 
     # Coordinates of lower right corner of the crop
     x2 = x2 + buffer if x2 + buffer <= img.shape[1] else img.shape[1]
-    y2 = y2 + buffer if y2 + buffer <= img.shape[0] else img.shape[0] 
-    
+    y2 = y2 + buffer if y2 + buffer <= img.shape[0] else img.shape[0]
+
     if len(img.shape) == 2:
         img_crop = img[y1:y2, x1:x2]
     else:
