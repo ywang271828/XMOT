@@ -188,7 +188,8 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
             _img_debug = np.copy(img_crop)
             shape = "non-circle" # Cannot find a circle with permitted circular degree larger than
                                  # THRESHOLD_CIRCULAR_DEGREE. It's non-circle.
-    # else: len(contours) > 1 and max_area / particle.get_contour_bbox_area() between LEGIT_PARTICLE_AREA_RATIO and LEGIT_CLOSED_CONTOUR_RATIO
+    # else: len(contours) > 1 and max_area / particle.get_contour_bbox_area
+    # () between LEGIT_PARTICLE_AREA_RATIO and LEGIT_CLOSED_CONTOUR_RATIO
 
     # 1. no contour can be detected.
 
@@ -260,7 +261,7 @@ def crop_particle(particle: Particle, img, buffer = 1):
     aid following identification. Note that negative coordinates will wrap around as what python
     slicing does, so we need to check whether they are out of the image before cropping.
     """
-    x1, y1, x2, y2 = particle.get_bbox_torch()
+    x1, y1, x2, y2 = particle.get_contour_bbox_torch()
 
     # Coordinates of upper left corner of the crop
     # Add buffer to the bbox to make sure the entire

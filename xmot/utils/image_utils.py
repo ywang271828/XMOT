@@ -97,8 +97,8 @@ def get_contour_center(cnt) -> List[int]:
               number of anchor points of the contour.
     """
     moments = cv.moments(cnt) # OpenCV contour object: numpy.ndarray of shape (n, 1, 2)
-    center_x = int(moments["m10"] / moments['m00'])
-    center_y = int(moments["m01"] / moments['m00'])
+    center_x = round(moments["m10"] / moments['m00'])
+    center_y = round(moments["m01"] / moments['m00'])
     return [center_x, center_y]
 
 def load_images_from_dir(dir, start_id=0, end_id=sys.maxsize, ext=None, grayscale=True) \

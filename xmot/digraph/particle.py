@@ -3,6 +3,7 @@ import cv2 as cv
 import numpy as np
 import copy
 from xmot.utils.image_utils import get_contour_center
+import math
 
 class Particle:
     """Particles recorded in combustion videos.
@@ -61,7 +62,7 @@ class Particle:
         if self.contour is not None:
             _x, _y, _w, _h = cv.boundingRect(self.contour)
             self.cnt_bbox_area = _w * _h
-            self.contour_area = cv.contourArea(self.contour)
+            self.contour_area = round(cv.contourArea(self.contour))
             self.contour_centroid = get_contour_center(self.contour)
         else:
             self.cnt_bbox_area = -1
@@ -112,9 +113,9 @@ class Particle:
     def get_bbox(self):
         return copy.deepcopy(self.bbox)
 
-    def get_bbox_torch(self) -> List[int]:
+    def get_contour_bbox_torch(self) -> List[int]:
         """
-        Get the bbox in the torch convention, which are the coordinates of the upper left
+        Get the bbox in the torch convention, i.e. the coordinates of the upper left
         and lower right corner of the bounding box.
 
         Since this function is mostly used in benchmark and drawing bbox on images, it should
@@ -124,16 +125,16 @@ class Particle:
         is not detected and we'll assume the Kalman-filter adjusted centroid is at the
         center of the Kalman-filter predicted bbox.
 
-        Note the contour is from the object detection, and not adjusted by the Kalman filter.
+        Note usually the contour is from the object detection, and not adjusted by the Kalman filter.
 
         Return:
             [x1, y1, x2, y2]
         """
         if self.contour is None:
-            x1 = self.position[0] - self.bbox[0] / 2
-            x2 = self.position[0] + self.bbox[0] / 2
-            y1 = self.position[1] - self.bbox[1] / 2
-            y2 = self.position[1] + self.bbox[1] / 2
+            x1 = round(self.position[0] - self.bbox[0] / 2)
+            x2 = round(self.position[0] + self.bbox[0] / 2)
+            y1 = round(self.position[1] - self.bbox[1] / 2)
+            y2 = round(self.position[1] + self.bbox[1] / 2)
         else:
             x1, y1, _w, _h = cv.boundingRect(self.contour)
             x2 = x1 + _w
@@ -157,22 +158,31 @@ class Particle:
     def have_bubble(self):
         return self.bubble != None
 
-    def get_contour_area(self, regenerate=False) -> int:
+    def get_area_contour(self, regenerate=False) -> int:
+        """
+        Return the area of the contour. Return -1 when there is no contour.
+        """
         if self.contour == None:
             return -1
-        elif self.contour_contour_area == -1 or regenerate:
-            self.contour_area = cv.contourArea(self.contour)
+        elif self.contour_area == -1 or regenerate:
+            self.contour_area = round(cv.contourArea(self.contour))
         return self.contour_area
 
-    def get_contour_bbox_area(self, regenerate=False) -> int:
+    def get_area_contour_bbox(self, regenerate=False) -> int:
+        """
+        Return the area of the enclosing bbox of the contour. Return -1 when there is no contour.
+        """
         if self.contour == None:
             return -1
         elif self.cnt_bbox_area == -1 or regenerate:
             _x, _y, _w, _h = cv.boundingRect(self.contour)
-            self.cnt_bbox_area = _w * _h
+            self.cnt_bbox_area = round(_w * _h)
         return self.cnt_bbox_area
 
-    def get_contour_centroid(self, regenerate=False) -> List[int]:
+    def get_position_contour(self, regenerate=False) -> List[int]:
+        """
+        Return the centroid position of the contour. Return None when there is no contour.
+        """
         if self.contour == None:
             return None
         elif self.contour_centroid == None or regenerate:
@@ -206,10 +216,23 @@ class Particle:
         return "N/A"
 
     def __str__(self) -> str:
+        position_cnt = self.get_position_contour()
+        if self.get_position_contour() is None:
+            position_cnt = self.position
+
+        contour_area = self.get_area_contour()
+        if contour_area == -1:
+            # Approximate the contour area by assuming it's a circle.
+            contour_area = round(self.get_area_bbox() * math.pi  / 4.0)
+
+        # When there's no contour, use the Kalman filter predicted values as contour position
+        # and contour area. Although Kalman filter only predicts bbox area, we use it to approximate
+        # the contour area.
         string = "Particle_id : {:4d}; Time_frame: {:4d}; ".format(self.id, self.time_frame) + \
-                 "x, y: {:5.1f}, {:5.1f}; ".format(self.position[0], self.position[1]) + \
-                 "bbox (w, h): {:5.1f}, {:5.1f}; ".format(self.bbox[0], self.bbox[1]) + \
-                 "Contour Area: {:6.2f}; ".format(self.get_contour_area()) + \
+                 "x, y: {:6d}, {:6d}; ".format(*self.position) + \
+                 "bbox (w, h): {:6d}, {:6d}; ".format(*self.bbox) + \
+                 "Contour centroid: {:6d}, {:6d}; ".format(*position_cnt) + \
+                 "Contour Area: {:8d}; ".format(contour_area) + \
                  "Type: {:12s}; ".format(self.type) + \
                  "Shape: {:12s}; ".format(self.shape) + \
                  ""

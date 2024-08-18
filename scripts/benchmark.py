@@ -37,7 +37,7 @@ def batch(data_dir, model, output, area_threshold, tolerance, debug_output):
     xmls = glob.glob("{:s}/*.xml".format(data_dir))
     Logger.basic("Number of validation images found: {:d}".format(len(xmls)))
     model = DNN(model, device="cuda:0")
-    stats = {"particle_no-bubble_circle" : 0, 
+    stats = {"particle_no-bubble_circle" : 0,
              "particle_no-bubble_non-circle" : 0,
              "particle_bubble_circle" : 0,
              "particle_bubble_non-circle" : 0,
@@ -48,7 +48,7 @@ def batch(data_dir, model, output, area_threshold, tolerance, debug_output):
     shape_accuracy = {"particle_circle" : 0, "particle_non-circle": 0,
                       "shell_circle" : 0, "shell_non-circle": 0, "agglomerate_non-circle" : 0}
     detection_accuracy = {"true_positive" : 0, "false_positive" : 0, "false_negative": 0}
-    
+
     labelled_data = {}
     total_num_ptcls = 0
     for xml in xmls:
@@ -67,7 +67,7 @@ def batch(data_dir, model, output, area_threshold, tolerance, debug_output):
             shape = detect_shape(p, img)
             if shape == p.get_shape():
                 shape_accuracy["{:s}_{:s}".format(p.get_type(), p.get_shape())] += 1
-        
+
         bboxes, mask = model.predict(img)
         Logger.detail("Number of detected particles in {:s}: {:d}".format(Path(img_path).name, len(bboxes)))
         detected_ptcls = []
@@ -84,25 +84,25 @@ def batch(data_dir, model, output, area_threshold, tolerance, debug_output):
         for p1 in ps:
             found = False
             for p2 in detected_ptcls[:]: # Create a copy. Otherwise, it creates the classic editing-while-iterating bug.
-                if is_equivalent(p1.get_bbox_torch(), p2.get_bbox_torch(), tolerance):
+                if is_equivalent(p1.get_contour_bbox_torch(), p2.get_contour_bbox_torch(), tolerance):
                     detection_accuracy["true_positive"] += 1 # Labelled and detected.
                     detected_ptcls.remove(p2)
                     found = True
                     break
             if not found:
                 detection_accuracy["false_negative"] += 1 # Labelled, but not not detected
-            
+
             # Draw bboxes out for debug purposes.
             if not found:
-                b = p1.get_bbox_torch()
+                b = p1.get_contour_bbox_torch()
                 cv.rectangle(img_debug, (b[0], b[1]), (b[2], b[3]), color=(0, 0, 255), thickness = 1) # Red
             else:
-                b = p2.get_bbox_torch()
+                b = p2.get_contour_bbox_torch()
                 cv.rectangle(img_debug, (b[0], b[1]), (b[2], b[3]), color=(0, 255, 0), thickness = 1) # Green.
 
         detection_accuracy["false_positive"] += len(detected_ptcls) # Not labelled, but detected.
         for p in detected_ptcls:
-            b = p.get_bbox_torch()
+            b = p.get_contour_bbox_torch()
             cv.rectangle(img_debug, (b[0], b[1]), (b[2], b[3]), color=(255, 0, 0), thickness = 1) # Blue
         if debug_output != "":
             debug_img_path = Path(debug_output).joinpath(Path(img_path).name)
@@ -130,14 +130,14 @@ def batch(data_dir, model, output, area_threshold, tolerance, debug_output):
                     100 * float(shape_accuracy["particle_non-circle"]) / num_particle_non_circle))
         else:
             f.write("Shape accuracy {:s} : No particle.\n".format("particle_non-circle"))
-        
+
         if stats["shell_circle"] > 0:
             f.write("Shape accuracy {:s} = {:.3f}%\n".format("shell_circle",
                     100 * float(shape_accuracy["shell_circle"]) / stats["shell_circle"]))
         else:
             f.write("Shape accuracy {:s} = {:.3f}%\n".format("shell_circle",
                     100 * float(shape_accuracy["shell_circle"]) / -1))
-        
+
         if stats["shell_non-circle"] > 0:
             f.write("Shape accuracy {:s} = {:.3f}%\n".format("shell_non-circle",
                     100 * float(shape_accuracy["shell_non-circle"]) / stats["shell_non-circle"]))
@@ -154,7 +154,7 @@ def batch(data_dir, model, output, area_threshold, tolerance, debug_output):
         # Detection accuracy:
         for key, value in detection_accuracy.items():
             f.write("Detection accuracy {:s} = {:.3f}%\n".format(key, 100 * float(value) / total_num_ptcls))
-    
+
     # Benchmark results:
     #    Position: true positive, false positive, false negative;
     #    Shape: true, false;

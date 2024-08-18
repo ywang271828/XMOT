@@ -25,7 +25,7 @@ def load_labels(data_dir, area_threshold=AREA_THRESHOLD) -> Tuple[Dict[int, Dict
         obj = re.match(".*_([0-9]+)_([a-zA-Z]*)([0-9]+)\.([a-zA-Z]+)", img_file_name)
         video_id = int(obj.group(1))
         image_id = int(obj.group(3)) # frame_id
-        bbox = [p.get_bbox_torch() for p in particles]
+        bbox = [p.get_contour_bbox_torch() for p in particles]
         img = cv.imread(f"{data_dir}/images/{img_file_name}")
         if video_id not in labels:
             labels[video_id] = {image_id: bbox} # Add a new video to the dict.
@@ -33,7 +33,7 @@ def load_labels(data_dir, area_threshold=AREA_THRESHOLD) -> Tuple[Dict[int, Dict
         else:
             labels[video_id][image_id] = bbox # Add a new image to an existing video.
             images[video_id][image_id] = img
-    
+
     return labels, images
 
 def iou(bbox_1, bbox_2) -> float:
@@ -58,13 +58,13 @@ def iou(bbox_1, bbox_2) -> float:
     area_intersection = max(0, x2 - x1 + 1) * max(0, y2 - y1 + 1)
     area_union = (x4 - x3 + 1) * (y4 - y3 + 1)
 
-    return area_intersection / area_union    
+    return area_intersection / area_union
 
 def intersect(bbox_1, bbox_2) -> List[int]:
     """
     Get the intersection of two bboxes. If only intersect at a point or a line, return the bbox
     describing that point / line.
-    
+
     Return [0, 0, 0, 0] only if there's no intersection.
     """
     x1 = max(bbox_1[0], bbox_2[0])
@@ -82,15 +82,15 @@ def union(bbox_1, bbox_2) -> List[int]:
     x2 = max(bbox_1[2], bbox_2[2])
     y2 = max(bbox_1[3], bbox_2[3])
     return [x1, y1, x2, y2]
-        
+
 def compare_bbox(gt_bbox: List[List[int]], pred_bbox: List[List[int]], threshold = 0.5,
                  allow_enclose = False):
     """
     Attribute:
         threshold       float   0.5     IoU threshold
         allow_enclose   bool    False   Whether allow enclosed predicted bbox to be considered
-                                        as positive. Since we might have a partial detection 
-                                        of a particle, "True" value might artificially 
+                                        as positive. Since we might have a partial detection
+                                        of a particle, "True" value might artificially
                                         increase localization accuracy. Therefore, default is set
                                         to False.
     """
@@ -125,7 +125,7 @@ def compare_bbox(gt_bbox: List[List[int]], pred_bbox: List[List[int]], threshold
 
 def get_confusion_matrix(seen_gt: List[bool], seen_pred: List[bool]):
     """
-    Collect the count of true_positive, false_positive and false_negative from comparison 
+    Collect the count of true_positive, false_positive and false_negative from comparison
     results.
     "false_positive": Wrong prediction. Model predicted the existence of a particle, but there's no
                       particle. (i.e. over prediction)
@@ -150,19 +150,19 @@ def merge_confusion_matrix(dict1: Dict, dict2: Dict) -> Dict:
 
 def calc_precision(dict_confusion):
     """
-    Out of all the predicted particles, the ratio of predictions being actually particles. 
+    Out of all the predicted particles, the ratio of predictions being actually particles.
     (i.e. confidence rate)
     """
     total_predict = dict_confusion["true_positive"] + dict_confusion["false_positive"]
     correct_predict = dict_confusion["true_positive"]
-    
+
     # Nothing is predicted. Distinguish between a high confidence value causing no prediction or
     # a bright field image with nothing to predict.
     if total_predict == 0:
         total_ground_truth = dict_confusion["true_positive"] + dict_confusion["false_negative"]
         return 1. if total_ground_truth == 0 else 0.
-                        
-    return correct_predict / total_predict 
+
+    return correct_predict / total_predict
 
 def calc_recall(dict_confusion):
     """
@@ -171,7 +171,7 @@ def calc_recall(dict_confusion):
     """
     total_ground_truth = dict_confusion["true_positive"] + dict_confusion["false_negative"]
     correct_predict = dict_confusion["true_positive"]
-    
+
     if total_ground_truth == 0:
         total_predict = dict_confusion["true_positive"] + dict_confusion["false_positive"]
         return 1. if total_predict == 0 else 0.
@@ -205,7 +205,7 @@ def save_prediction_cnt(file, predicted_cnt: Dict[int, List[np.ndarray]]):
     """
     The input dict of contours has the format of:
         {<frame_id>: List[np.ndarray, np.ndarray, ...], <frame_id> : List[np.ndarry, np.ndarray, ...]}
-    
+
     Each np.ndarray in the list has the shape: (n, 1, 2), corresponding to the shape of contours in
     OpenCV.
 
@@ -234,7 +234,7 @@ def draw_bbox_with_id(shape, bbox: List[List[int]], img=None, padding=30, fontSc
     # Coordinates (x, y) are (column-index, row-index)
     img = cv.rectangle(img, (padding, padding), np.array((shape[1], shape[0])) + padding, color=0)
     for i, bbox in enumerate(bbox):
-        img = cv.putText(img, str(i), np.array((bbox[0], bbox[1])) + padding, 
+        img = cv.putText(img, str(i), np.array((bbox[0], bbox[1])) + padding,
                          cv.FONT_HERSHEY_SIMPLEX, fontScale, 0, 2, cv.LINE_AA)
         img = cv.circle(img, np.array((bbox[0], bbox[1])) + padding, radius=2, color=0, thickness=-1)
         img = cv.rectangle(img, np.array((bbox[0], bbox[1])) + padding,
@@ -261,21 +261,21 @@ def draw_comparison(gt_bbox, seen_gt, pred_bbox, seen_pred, img=None, shape=(640
         img = cv.copyMakeBorder(img, padding, padding, padding, padding, cv.BORDER_CONSTANT, value=(255,255,255))
         # Draw border.
         img = cv.rectangle(img, (padding, padding), np.array((shape[1], shape[0])) + padding, color=(0,0,0))
-    
+
     for i, bbox in enumerate(gt_bbox):
         if id:
-            img = cv.putText(img, str(i), np.array((bbox[0], bbox[1])) + padding, 
+            img = cv.putText(img, str(i), np.array((bbox[0], bbox[1])) + padding,
                             cv.FONT_HERSHEY_SIMPLEX, 0.75, (0,0,0), 2, cv.LINE_AA)
         if mark_top_left:
             img = cv.circle(img, np.array((bbox[0], bbox[1])) + padding, radius=2, color=(0,0,0), thickness=-1)
-        
+
         if seen_gt[i]:
             img = cv.rectangle(img, np.array((bbox[0], bbox[1])) + padding,
                                     np.array((bbox[2], bbox[3])) + padding, color=(0, 255, 0))
         else:
             img = cv.rectangle(img, np.array((bbox[0], bbox[1])) + padding,
                                     np.array((bbox[2], bbox[3])) + padding, color=(0, 0, 255))
-    
+
     for i, bbox in enumerate(pred_bbox):
         if seen_pred[i]:
             img = cv.rectangle(img, np.array((bbox[0], bbox[1])) + padding,
@@ -285,4 +285,3 @@ def draw_comparison(gt_bbox, seen_gt, pred_bbox, seen_pred, img=None, shape=(640
                                     np.array((bbox[2], bbox[3])) + padding, color=(255, 0, 0))
     #img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
     return img # BGR. To display in jupyter, convert to RGB first.
-    

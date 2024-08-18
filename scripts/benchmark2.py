@@ -65,13 +65,13 @@ def benchmark(data_dir, model, outdir, area_threshold, debug_output, confidence_
             _img_temp = cv.imread(str(_img_path), cv.IMREAD_GRAYSCALE)
             _key = "_".join([str(_i) for _i in _img_temp.shape[0:2]])
             images_bf[_key] = _img_temp
-        
+
         if len(images_bf) == 0:
             print("No brightfield images loaded when ask to subtract brightfield image!")
             exit(1)
 
     # Run benchmark
-    stats = {"particle_no-bubble_circle" : 0, 
+    stats = {"particle_no-bubble_circle" : 0,
              "particle_no-bubble_non-circle" : 0,
              "particle_bubble_circle" : 0,
              "particle_bubble_non-circle" : 0,
@@ -81,7 +81,7 @@ def benchmark(data_dir, model, outdir, area_threshold, debug_output, confidence_
 
     shape_accuracy = {"particle_circle" : 0, "particle_non-circle": 0,
                       "shell_circle" : 0, "shell_non-circle": 0, "agglomerate_non-circle" : 0}
-    
+
     #labelled_data = {}
     total_num_ptcls = 0
     total_conf_matrix = {"true_positive": 0, "false_positive": 0, "false_negative": 0}
@@ -99,13 +99,13 @@ def benchmark(data_dir, model, outdir, area_threshold, debug_output, confidence_
         image_id = re_obj.group(3)
         img_path = str(Path(data_dir).joinpath(f"images/{file_name}"))
         img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
-        
+
         if video_id not in labeled_bbox:
             labeled_bbox[video_id] = {}
             labeled_images[video_id] = {}
             labeled_particles[video_id] = {}
             dict_conf_matrix[video_id] = {}
-        labeled_bbox[video_id][image_id] = [p.get_bbox_torch() for p in ps]
+        labeled_bbox[video_id][image_id] = [p.get_contour_bbox_torch() for p in ps]
         labeled_images[video_id][image_id] = img
         labeled_particles[video_id][image_id] = ps
 
@@ -125,7 +125,7 @@ def benchmark(data_dir, model, outdir, area_threshold, debug_output, confidence_
                 shape = detect_shape(p, img)
                 if shape == p.get_shape():
                     shape_accuracy["{:s}_{:s}".format(p.get_type(), p.get_shape())] += 1
-        
+
             # Localization Accuracy
             if subtract_brightfield:
                 _key = "_".join([str(_i) for _i in img.shape[0:2]])
@@ -139,16 +139,16 @@ def benchmark(data_dir, model, outdir, area_threshold, debug_output, confidence_
             pred_bbox = np.round(pred_bbox).astype(np.int64)
             #Logger.detail("Number of detected particles in {:s}: {:d}".format(Path(img_path).name, len(pred_bbox)))
             seen_gt, seen_pred = compare_bbox(gt_bbox, pred_bbox, allow_enclose=False)
-        
+
             # Draw the bbox comparison results out.
             video_dir = outdir.joinpath(f"video_{video_id}")
             video_dir.mkdir(parents = True, exist_ok=True)
             compare_dir = video_dir.joinpath("bbox_comparison")
             compare_dir.mkdir(exist_ok=True)
-            
+
             img_white = draw_comparison(gt_bbox, seen_gt, pred_bbox, seen_pred, shape=(img.shape[0], img.shape[1]))
             cv.imwrite(str(compare_dir.joinpath(f"white_{image_id}.png")), img_white)
-            
+
             img_white_padded = draw_comparison(gt_bbox, seen_gt, pred_bbox, seen_pred,
                                                 padding=30, shape=(img.shape[0], img.shape[1]))
             cv.imwrite(str(compare_dir.joinpath(f"white_padded_{image_id}.png")), img_white_padded)
@@ -184,7 +184,7 @@ def benchmark(data_dir, model, outdir, area_threshold, debug_output, confidence_
     write_accuracy(str(outdir.joinpath("accuracy.txt")), total_conf_matrix)
     with open(str(outdir.joinpath("confusion_matrix.txt")), "w") as f:
         json.dump(dict_conf_matrix, f)
-    
+
     with open(outdir.joinpath("shape_accuracy.txt"), "w") as f:
         f.write("Total number of labelled images = {:d}\n".format(len(xmls)))
         f.write("Total number of labelled particles = {:d}\n".format(total_num_ptcls))
@@ -201,13 +201,13 @@ def benchmark(data_dir, model, outdir, area_threshold, debug_output, confidence_
                     100 * float(shape_accuracy["particle_non-circle"]) / num_particle_non_circle))
         else:
             f.write("Shape accuracy {:s} : -1\n".format("particle_non-circle"))
-        
+
         if stats["shell_circle"] > 0:
             f.write("Shape accuracy {:s} = {:.3f}%\n".format("shell_circle",
                     100 * float(shape_accuracy["shell_circle"]) / stats["shell_circle"]))
         else:
             f.write("Shape accuracy {:s} = -1\n".format("shell_circle"))
-        
+
         if stats["shell_non-circle"] > 0:
             f.write("Shape accuracy {:s} = {:.3f}%\n".format("shell_non-circle",
                     100 * float(shape_accuracy["shell_non-circle"]) / stats["shell_non-circle"]))
@@ -220,7 +220,7 @@ def benchmark(data_dir, model, outdir, area_threshold, debug_output, confidence_
         else:
             f.write("Shape accuracy {:s} = -1\n".format("agglomerate as non-circle"))
 
-    
+
 # ------------------------------------ Helper function ----------------------------------------- #
 def write_accuracy(file, conf_matrix):
     with open(file, "w") as f:
