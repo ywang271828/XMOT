@@ -60,6 +60,8 @@ def load_blobs_from_text(file_name: str, img_height=commons.PIC_DIMENSION[0], im
                 # The centroid_x, centroid_y could be negative, according to Kalman filter's prediction
                 centroid_x, centroid_y, width, height, id, frame_id = [int(term) for term in terms[0:6]]
                 contour = np.array(json.loads(terms[6]), dtype=np.float32)
+                if len(contour) == 0:
+                    contour = None
                 ## Sanity check. During Kalman filter, the coordinates of the bbox might be out of
                 ## the image. We need to check them before adding this particle into digraph.
                 #if (x1 < 0 and x2 < 0) or \
@@ -138,7 +140,7 @@ def parse_pascal_xml(file_path: str, area_threshold=config.AREA_THRESHOLD) -> Tu
         particles.append(p)
 
     # sort in ascending order of y (row-index of numpy), and then x (column-index of numpy).
-    particles.sort(key=lambda p: p.get_top_left_position_reversed())
+    particles.sort(key=lambda p: list(reversed(p.get_position())))
     obj = re.match(".*_([0-9]+)_([a-zA-Z]*)([0-9]+)\.([a-zA-Z]+)", file_name)
     if obj is None:
         print(f"Cannot read video and image id from picture {file_name}")
