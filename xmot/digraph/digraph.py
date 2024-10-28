@@ -2,8 +2,10 @@ from typing import List, Tuple
 import os
 from pathlib import Path
 import copy
+import cv2 as cv
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-import xmot.analyzer.shapeDetector as shape_detector
+
 
 from xmot.logger import Logger
 from xmot.digraph.node import Node
@@ -11,7 +13,7 @@ from xmot.digraph.trajectory import Trajectory
 from xmot.digraph.particle import Particle
 import xmot.digraph.commons as commons
 import xmot.digraph.utils as utils
-from xmot.digraph.utils import BACK_TRACE_LIMIT
+import xmot.analyzer.shapeDetector as shape_detector
 
 class Digraph:
     """
@@ -50,7 +52,7 @@ class Digraph:
                     # Note: trajectory attributes: start_node, end_node and kalmanfilter
                     # are still None.
                     #traj.add_particle(p)
-                    traj.append_particle(p) # At initialization stage, we can simple append
+                    traj.append_particle(p) # At initialization stage, we can simply append
                                             # the particle without any checks.
                     break
             else:
@@ -65,7 +67,7 @@ class Digraph:
 
         # Post-processing:
         # This operation was meant to dealt with flickering issues. But it causes more
-        # error messages than it can solve the flickering problem. In fact, for particles
+        # error messages than it can solve for the flickering problem. In fact, for particles
         # that have flickering problems, they're not static and could move really far away
         # itself in directly preceding frame. So the "close in time and space" criterion of
         # merging might not work. (Or perhaps we can keep the trajectories that cannot merge).
@@ -73,16 +75,13 @@ class Digraph:
 
         # Attach a start node and end node to each of the trajectory
         for traj in self.trajs:
-            start_node = Node()
-            end_node = Node()
+            start_node = Node(in_trajs = None, out_trajs = [traj])
+            end_node = Node(in_trajs = [traj], out_trajs = None)
             traj.set_start_node(start_node)
             traj.set_end_node(end_node)
-            start_node.add_out_traj(traj)
-            end_node.add_in_traj(traj)
             self.nodes += [start_node, end_node]
 
-        # <TODO> Merge nodes in collisions and micro-explosions.
-        #self.__detect_events()
+        # Event detection and merge nodes.
         self.__detect_events2()
 
     def __merge_short_trajs(self):
@@ -148,7 +147,7 @@ class Digraph:
                 t_j = sorted_trajs[j]
                 if t_j in trajs_start_merged:
                     continue
-                if t_j.get_start_time() - event_time <= BACK_TRACE_LIMIT and \
+                if t_j.get_start_time() - event_time <= utils.CLOSE_IN_TIME and \
                    t_j.get_position_by_time(event_time) != None:
                     dist = utils.distance(t_i.get_position_by_time(event_time),
                                           t_j.get_position_by_time(event_time))
@@ -177,7 +176,7 @@ class Digraph:
                     # The end node of t_k has been merged with ealier start nodes of other trajectory.
                     # Don't need to be tested with
                     continue
-                if abs(t_k.get_end_time() - event_time) <= BACK_TRACE_LIMIT and \
+                if abs(t_k.get_end_time() - event_time) <= utils.CLOSE_IN_TIME and \
                    t_k.get_position_by_time(event_time) != None:
                     dist = utils.distance(t_i.get_position_by_time(event_time),
                                           t_k.get_position_by_time(event_time))
@@ -201,14 +200,16 @@ class Digraph:
 
     def __detect_events2(self):
         """
-        A simpler function to merge nodes and form events. Use a nested loop to compare
-        pairwisely the distance between nodes in time and space.
+        A simpler function to detect events and merge nodes. It parewisely compare both the spatial
+        and temporal distances of pairs of nodes. When a pair of nodes are determined to be close,
+        merge the node with a later start time into the node with an earlier start time (via
+        iterating trajectories in chronological order).
 
         The rule must be obeyed for merging: A start node of a trajecotry must start earlier in time
         than its end node.
 
-        This rule brings up two practical checks:
-        1. For a trajectory start earlier in time, its start node cannot be merged with
+        This rule implies two practical checks for short trajectories:
+        1. For a trajectory that starts earlier in time, its start node cannot be merged with
            end nodes of a trajectory that starts later in time.
         2. The end node of a trajectory A can't be merged with the start node of a trajectory B whose
            start node starts later in time but has been merged with the start node of A.
@@ -227,7 +228,7 @@ class Digraph:
 
                 # Case 1. Check the start node of t_i with start node of t_j:
                 event_time = t_i.get_start_time()
-                if t_j.get_start_time() - event_time <= BACK_TRACE_LIMIT and \
+                if t_j.get_start_time() - event_time <= utils.CLOSE_IN_TIME and \
                    t_j.get_position_by_time(event_time) != None:
                     dist = utils.distance(t_i.get_position_by_time(event_time),
                                           t_j.get_position_by_time(event_time))
@@ -255,7 +256,7 @@ class Digraph:
                 # do not need to check closeness in time and space. Even if they are close, we can't
                 # merge.
                 if t_j.get_start_node() != t_i.get_start_node() and \
-                   abs(t_j.get_start_time() - event_time) <= BACK_TRACE_LIMIT and \
+                   abs(t_j.get_start_time() - event_time) <= utils.CLOSE_IN_TIME and \
                    t_j.get_position_by_time(event_time) != None:
                     dist = utils.distance(t_i.get_position_by_time(event_time),
                                           t_j.get_position_by_time(event_time))
@@ -272,8 +273,9 @@ class Digraph:
                 # 3. Check the end node of t_i with end node of t_j:
                 event_time = t_i.get_end_time()
 
+                # End node of t_i has not already been merged with start node of t_j.
                 if t_i.get_end_node() != t_j.get_start_node() and \
-                   abs(t_j.get_end_time() - event_time) <= BACK_TRACE_LIMIT and \
+                   abs(t_j.get_end_time() - event_time) <= utils.CLOSE_IN_TIME and \
                    t_j.get_position_by_time(event_time) != None:
                     dist = utils.distance(t_i.get_position_by_time(event_time),
                                           t_j.get_position_by_time(event_time))
@@ -428,14 +430,14 @@ class Digraph:
             # Mark the event in the videoframes of its happenning.
             if t in dict_nodes:
                 for node in dict_nodes[t]:
-                    bbox = node.get_bbox()
+                    bbox = node.get_bbox_node()
                     if node.get_type() == "start":
                         color = (255, 0, 0, 125) # translucent, red
                     elif node.get_type() == "end":
                         color = (0, 0, 255, 125) # translucent, blue
                     else:
                         color = (0, 255, 0, 125) # translucent, green
-                    #draw.rectangle(bbox, fill=color)
+                    #draw.rectangle(utils.torch_bbox_to_coordinates(bbox), fill=color)
             if t in dict_ptcls:
                 for p in dict_ptcls[t]:
                     #bbox = p.bbox
@@ -505,14 +507,14 @@ class Digraph:
         for t in range(start_frame, end_frame + 1):
             if t in dict_nodes:
                 for node in dict_nodes[t]:
-                    bbox = node.get_bbox()
+                    bbox = node.get_bbox_node()
                     if node.get_type() == "start":
                         color = (255, 0, 0, 125) # translucent, red
                     elif node.get_type() == "end":
                         color = (0, 0, 255, 125) # translucent, blue
                     else:
                         color = (0, 255, 0, 125) # translucent, green
-                    draw.rectangle(bbox, fill=color)
+                    draw.rectangle(utils.torch_bbox_to_coordinates(bbox), fill=color)
             if t in dict_ptcls:
                 for p in dict_ptcls[t]:
                     #bbox = p.bbox
@@ -582,14 +584,14 @@ class Digraph:
                             break
                     else:
                         continue # All trajectories are shorter than 5 time frames.
-                    bbox = node.get_bbox()
+                    bbox = node.get_bbox_node()
                     if node.get_type() == "start":
                         color = (255, 0, 0, 125) # translucent, red
                     elif node.get_type() == "end":
                         color = (0, 0, 255, 125) # translucent, blue
                     else:
                         color = (0, 255, 0, 125) # translucent, green
-                    draw.rectangle(bbox, fill=color)
+                    draw.rectangle(utils.torch_bbox_to_coordinates(bbox), fill=color)
             if t in dict_trajs:
                 # Grow trajectories that exist at time t.
                 for traj in dict_trajs[t]:
@@ -645,6 +647,86 @@ class Digraph:
         for p in self.ptcls:
             shape = shape_detector.detect_shape(p, images[p.get_time_frame()])
             p.set_shape(shape)
+
+    def draw_events(self, images, outdir, type: str = None, prefix: str = None):
+        """
+        Highlight nodes whose type is not 'start' or 'end' and the involving trajectories.
+        Draw the bbox of the nodes, contours and IDs of the particles.
+
+        Args:
+            images: The original images. Overlay the events on them.
+            outdir: The output folder for the events. Each event will has its subfolder.
+            type: Highlight only the given type of events.
+            prefix: Prefix of saved image. E.g. use video ID with material information.
+        """
+        # TODO: ID the events and store them as an attribute of the digraph object, rather than
+        # temporarily in this function.
+        counts = {}
+        outdir_path = Path(outdir)
+        for node in self.nodes:
+            event_type = node.get_type()
+            if type is not None and event_type != type:
+                continue
+
+            if event_type == 'start' or event_type == 'end':
+                continue
+
+            # Draw the event
+            event_id = counts.get(event_type, 0)
+            event_dir = outdir_path.joinpath(f'{event_type}_{event_id}')
+            event_dir.mkdir(parents=True, exist_ok=True)
+            prefix = prefix if prefix is not None else f'{event_type}_{event_id}'
+            # Get the time frames. Get the bboxes of the particles within these time frames.
+            # Draw time frame, node bboxes, particle contours with ids in the image
+            # Save the image to event_dir with time_frame number.
+            for time in range(node.get_start_time(), node.get_end_time() + 1):
+                img_result = cv.cvtColor(images[time], cv.COLOR_GRAY2BGR)
+                # Write the time frame on the upper-left corner in green.
+                img_result = cv.putText(
+                    img_result, str(time), np.array((30, 30)), cv.FONT_HERSHEY_SIMPLEX,
+                    fontScale=0.75, color=(0, 255, 0), thickness = 1, lineType=cv.LINE_AA
+                )
+
+                # Draw the node bbox in green.
+                img_result = cv.rectangle(
+                    img_result, *utils.torch_bbox_to_coordinates(node.get_bbox_node()),
+                    color=(0, 255, 0), thickness = 2
+                )
+                #contours = []
+                for traj in node.get_in_trajs():
+                    p = traj.get_particle_by_time(time)
+                    if p is None or p.get_contour() is None:
+                        # At this given time frame, there's no particle in the trajectory or the
+                        # particle is inferred by Kalman filters (not detected at detection step).
+                        # The former case happen when the event is detected within the
+                        # BACK_TRACE_LIMIT.
+
+                        # Draw estimated particle bbox with dashed lines.
+                        _position = traj.get_position_by_time(time)
+                    else:
+                        #contours.extend(p.get_contour())
+                        _bbox = p.get_contour_bbox_torch()
+                        # Write the particle ID (eq. to traj ID) at upper right corner of particle bbox.
+                        img_result = cv.putText(
+                            img_result, str(traj.get_id()), np.array((_bbox[2] + 5, _bbox[1] - 5)),
+                            cv.FONT_HERSHEY_SIMPLEX, fontScale=0.75, color=(0, 0, 255), thickness = 2,
+                            lineType=cv.LINE_AA
+                        )
+
+                        # Draw particle contours (not Kalman Filter adjusted positions) in red.
+                        img_result = cv.drawContours(
+                            img_result, p.get_contour(), -1, color=(0, 0, 255), thickness=2
+                        )
+
+
+
+                # Save the image
+                cv.imwrite(str(event_dir.joinpath(f"{prefix}_{time}.png")), img_result)
+
+            # Increment the event count.
+            counts[event_type] = event_id + 1
+
+
 
     def __str__(self):
         """
