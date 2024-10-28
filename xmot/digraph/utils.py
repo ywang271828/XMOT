@@ -11,12 +11,12 @@ import numpy as np
 from xmot.logger import Logger
 from xmot.digraph.particle import Particle
 
-CLOSE_IN_TIME = 3
+BACK_TRACE_LIMIT = 3    # Time frames before the start time of a trajectory allowed to
+                        # estimate position at.
+CLOSE_IN_TIME = BACK_TRACE_LIMIT
 CLOSE_IN_SPACE = 40
 #EVENT_TIME_WINDOW = 3   # Span of time frames allowed between trajectory start times
 #                        # to be considered as candidates for events.
-BACK_TRACE_LIMIT = 3    # Time frames before the start time of a trajectory allowed to
-                        # estimate position at.
 
 def distance(a: List[float], b: List[float]) -> float:
     """L2 norm of vectors of any dimension."""
@@ -187,3 +187,9 @@ def contrast_stretch(img, saturation=2.0):
     lower_limit, upper_limit = np.percentile(img, (saturation, 100 - saturation))
     img_stretched = exposure.rescale_intensity(img, in_range=(lower_limit, upper_limit))
     return img_stretched
+
+def torch_bbox_to_coordinates(bbox) -> List[Tuple[int]]:
+    """
+    Transform bbox in torch format to pair of coordinates.
+    """
+    return [(bbox[0], bbox[1]), (bbox[2], bbox[3])]

@@ -40,32 +40,33 @@ class Trajectory:
 
     """
 
-    def __init__(self, id, ptcls: List[Particle] = None, kalmanfilter = None,
-                 start_node: Node = None, end_node: Node = None):
+    def __init__(self, id, ptcls: List[Particle], start_node: Node = None,
+                 end_node: Node = None, kalmanfilter = None):
         """
 
         """
-        self.id = id
-        self.ptcls = ptcls
-        self.kalmanfilter = kalmanfilter
-        self.start_node = start_node
-        self.end_node = end_node
+        self.id: int = id
+        self.ptcls: List[Particle] = ptcls
+        self.start_node: Node = start_node
+        self.end_node: Node = end_node
+
+        self.kalmanfilter = kalmanfilter # Deprecated
 
         # helper variables
-        self.ptcl_time_map = {p.get_time_frame(): p for p in ptcls}
+        self.ptcl_time_map = {p.get_time_frame(): p for p in ptcls} if ptcls is not None else {}
 
         # Post-processed properties. They should not be set in constructor, but be extracted
         # after the trajectory is fully built.
-        self.start_time = 0
-        self.end_time = 0
-        self.avg_velocity = float("nan")    # Average velocity over entire existence.
+        self.start_time = -1
+        self.end_time = -1
+        self.avg_velocity = float("nan")    # Average velocity over the lifetime of the trajectory.
         self.velocity_vectors = None
 
         # Status flag to control internal behaviour.
         self.__sorted = False           # whether particles at different time frame of this trajectory
                                         # are sorted in ascending order of time_frame. Properties
                                         # rely on sequential processing of the list of particles
-                                        # will be inaccurate if particles are not in temporal order.
+                                        # will be wrong if particles are not in chronological order.
                                         # Sorting is requried before calculation of any of these
                                         # properties.
 
@@ -157,7 +158,10 @@ class Trajectory:
         """
         self.ptcls.append(particle)
         self.ptcl_time_map[particle.get_time_frame()] = particle
-        if self.__sorted: # When adding new particle to the list, we have to re-sort in termporal order.
+
+        # There's no guarantee that the new particle is later in time than existing particles.
+        # Have to re-sort in chronological order.
+        if self.__sorted:
             self.reset()
 
     def set_start_node(self, node):
@@ -179,14 +183,10 @@ class Trajectory:
             self.end_time = self.ptcls[-1].time_frame
         else:
             Logger.debug("Sorted an empty trajectory {:d}".format(self.id))
-            self.start_time = 0
-            self.end_time = 0
+
         self.__sorted = True
 
     # Post-processing functions
-    def __is_sorted(self):
-        return self.__sorted
-
     def get_id(self) -> int:
         return self.id
 
@@ -197,7 +197,7 @@ class Trajectory:
         return self.end_node
 
     def get_start_time(self) -> int:
-        if not self.__is_sorted():
+        if not self.__sorted:
             self.sort_particles()
         return self.start_time
 
@@ -205,11 +205,14 @@ class Trajectory:
         """
             The last time frame that the underlying particle exists in the video. Inclusive.
         """
-        if not self.__is_sorted():
+        if not self.__sorted:
             self.sort_particles()
         return self.end_time
 
     def get_life_time(self) -> int:
+        """
+        Return the number of frames in which the trajectory exists.
+        """
         return self.get_end_time() - self.get_start_time() + 1
 
     # TODO: Use get_position_by_time to simplify code.
@@ -217,25 +220,33 @@ class Trajectory:
         """
         Return:
             [float, float] Position of the underlying particle at the start of the trajectory.
+                           Kalman-filter adjusted.
         """
-        if not self.__is_sorted():
+        if not self.__sorted:
             self.sort_particles()
         if len(self.ptcls) > 0:
-            return self.ptcls[0].position
+            return self.ptcls[0].get_position()
         else:
             return None
 
     def get_position_end(self) -> List[float]:
-        if not self.__is_sorted():
+        """
+        This is equivalent to traj.get_end_particle().get_position()
+
+        Return:
+            [float, float] Position of the underlying particle at the end of the trajectory.
+                           Kalman-filter adjusted.
+        """
+        if not self.__sorted:
             self.sort_particles()
         if len(self.ptcls) > 0:
-            return self.ptcls[-1].position
+            return self.ptcls[-1].get_position()
         else:
             return None
 
     def get_position_by_time(self, time: int) -> List[float]:
         """
-        Get position of underlying particle at specified time.
+        Get the centroid position of underlying particle at a specified time-frame.
 
         Attribute:
             time    int     Desired time frame.
@@ -246,46 +257,80 @@ class Trajectory:
         if time in self.ptcl_time_map.keys():
             return self.ptcl_time_map[time].get_position()
         elif len(self.ptcls) < 2:
-            Logger.detail("Cannot backtrace or predict position for trajectory eixsting for " \
-                          "only one frame.")
+            Logger.detail("Cannot backtrace or predict position for trajectory existing for " \
+                          "less than two frames.")
             return None
-        elif min(self.ptcl_time_map.keys()) - time <= BACK_TRACE_LIMIT:
+
+        if not self.__sorted:
+            self.sort_particles()
+
+        if self.get_start_time() - time <= BACK_TRACE_LIMIT:
+            # 'time' is before the start of the trajectory
             # Back trace to estimate positions in past time (no more than 3 frames).
-            Logger.debug("Backtrace position of trajectory-{:d} at frame-{:d}.".format(self.id, time))
             # Use instant velocity at the first two frames to backtrace positions
-            # <TODO> We can use the average of as many as possible instant velocities that don't
-            # drastically change direction. (angle between velocity vectors)
-            if not self.__is_sorted():
-                self.sort_particles()
+            # <TODO> We should use the average of as many as possible instant velocities that don't
+            # drastically change direction. (angle between velocity vectors). Even better, the
+            # Kalman filter.
+            Logger.debug("Backtrace position of trajectory-{:d} at frame-{:d}.".format(self.id, time))
+
             p1 = self.ptcls[0].get_position()
             p2 = self.ptcls[1].get_position() # Later in time
-            delta_t = self.ptcls[1].get_time_frame() - self.ptcls[0].get_time_frame()
+            delta_t = self.ptcls[1].get_time_frame() - self.ptcls[0].get_time_frame() # Positive
             if delta_t == 0:
-                Logger.debug("Particles of the same trajectory have equal time frame! Cannot backtrace.")
+                Logger.debug(f"The first two particles of trajectory-{self.id} have equal time frame! Cannot backtrace.")
                 return p1 # The first particle
             return_position = [0, 0]
             return_position[0] = p1[0] - (p2[0] - p1[0]) / delta_t * (self.ptcls[0].get_time_frame() - time)
             return_position[1] = p1[1] - (p2[1] - p1[1]) / delta_t * (self.ptcls[0].get_time_frame() - time)
             return return_position
-        elif time - max(self.ptcl_time_map.keys()) <= BACK_TRACE_LIMIT:  # Not very likely to be needed.
+        elif time - self.get_end_time() <= BACK_TRACE_LIMIT:
+            # 'time' is after the end of the trajectory
             # Forward trace to predict positions of particles in a future time.
             Logger.debug("Predict position of trajectory-{:d} at frame-{:d}.".format(self.id, time))
             # Use instant velocity at the last two frames to predict positions
-            if not self.__is_sorted():
-                self.sort_particles()
+
             p1 = self.ptcls[-1].get_position()
             p2 = self.ptcls[-2].get_position() # Second to the last frame
-            delta_t = self.ptcls[-1].get_time_frame() - self.ptcls[-2].get_time_frame()
+            delta_t = self.ptcls[-1].get_time_frame() - self.ptcls[-2].get_time_frame() # Positive
             if delta_t == 0:
-                Logger.debug("Particles of the same trajectory have equal time frame! Cannot backtrace.")
+                Logger.debug(f"The last two particles of trajectory-{self.id} have equal time frame! Cannot predict.")
                 return p1 # The last particle
             return_position = [0, 0]
             return_position[0] = p1[0] + (p1[0] - p2[0]) / delta_t * (time - self.ptcls[-1].get_time_frame())
             return_position[1] = p1[1] + (p1[1] - p2[1]) / delta_t * (time - self.ptcls[-1].get_time_frame())
             return return_position
         else:
-            Logger.debug("Cannot backtrace trajectory-{:d} at frame-{:d}. Exceed permitted backtrace interval.")
+            Logger.debug("Cannot backtrace trajectory-{:d} to frame-{:d}. Exceeded permitted backtrace interval.")
             return None
+
+    def get_particle_by_time(self, time: int) -> Particle:
+        """
+        Get the particle object at the given time. Unlike get_position_by_time() which interpolates
+        to the given time if it's outside the range of start_time and end_time, this function returns
+        None if there's no particle at the given time.
+        """
+        if not self.__sorted:
+            self.sort_particles()
+
+        if time < self.start_time or time > self.end_time:
+            Logger.warning(f"Specified time is outside the life time of trajectory-{self.id}: " + \
+                         f"{time:4d} {self.start_time:4d} {self.end_time:4d}")
+            return None
+
+        for p in self.ptcls:
+            if p.time_frame == time:
+                return p
+
+        Logger.debug(f"No particle exists for trajectory-{self.id} at the time: {time:4d}")
+        return None
+
+    def get_snapshots(self, start: int, end: int) -> List[Particle]:
+        """Retrun a deep copy of lists of particles between the time interval (inclusive)."""
+        snapshot = []
+        for p in self.ptcls:
+            if start <= p.time_frame and p.time_frame <= end:
+                snapshot.append(copy.deepcopy(p))
+        return snapshot
 
     def has_particle(self, time: int) -> bool:
         """
@@ -296,46 +341,32 @@ class Trajectory:
                 return True
         return False
 
-    def get_snapshots(self, start: int, end: int) -> List[Particle]:
-        """Retrun a deep copy of lists of particles between the time interval (inclusive)."""
-        snapshot = []
-        for p in self.ptcls:
-            if start <= p.time_frame and p.time_frame <= end:
-                snapshot.append(copy.deepcopy(p))
-        return snapshot
-
-    def get_particle_by_frame(self, time: int) -> Particle:
-        self.sort_particles()
-        if time < self.start_time or time > self.end_time:
-            Logger.error("Specified time is outside the life time of the trajectory: " + \
-                         "{:3d} {:4d} {:4d} {:4d}".format(self.id, time,
-                                                          self.start_time, self.end_time))
-            return None
-        for p in self.ptcls:
-            if p.time_frame == time:
-                return p
-        Logger.detail("No particle exists in this trajectory at the time: " +
-                      "{:3d} {:4d}".format(self.id, time))
-        return None
-
     def get_particles(self) -> List[Particle]:
         return self.ptcls
 
     def get_start_particle(self) -> Particle:
-        if not self.__is_sorted:
+        if self.ptcls is None: # Actually this should never be None.
+            return None
+
+        if not self.__sorted:
             self.sort_particles()
         return self.ptcls[0]
 
     def get_end_particle(self) -> Particle:
-        if not self.__is_sorted:
+        if self.ptcls is None: # Actually this should never be None.
+            return None
+
+        if not self.__sorted:
             self.sort_particles()
         return self.ptcls[-1]
 
-    def _initialize_velocity_vectors(self) -> bool:
+    def _compute_velocity_vectors(self) -> bool:
         """
-        If the list of instant velocity vectors in not initalized, initialize it. Short-circuit
-        if the vector is not None. It relies on the "__sorted" attribute to determine whether
-        the non-empty vector is up-to-date or not.
+        If the list of instant velocity vectors in not computed, initialize and compuate them.
+        Short-circuit if they have already been computed.
+
+        Note: It relies on the "__sorted" attribute to determine whether the non-empty vector
+        is up-to-date or not.
         """
         if not self.__sorted:
             self.sort_particles() # Internally already called self.reset()
@@ -346,7 +377,7 @@ class Trajectory:
             return False
 
         if self.velocity_vectors is not None and not math.isnan(self.avg_velocity):
-            return True # Already initialized. Short circuit.
+            return True # Already computed. Short circuit.
 
         self.velocity_vectors = np.zeros(shape=(len(self.ptcls) - 1, 2), dtype=np.float64)
         for i in range(0, len(self.ptcls) - 1):
@@ -355,11 +386,12 @@ class Trajectory:
             if p1.time_frame == p2.time_frame:
                 # Multiple particles exists for the same time frame.
                 Logger.error("Fail to calculate velocity. Multiple particles " \
-                            f"exist in this trajectory-{self.id} at the same time frame {p1.time_frame}" \
-                            f". {p1.get_id()} {p2.get_id()}")
+                            f"exist in this trajectory-{self.id} at the same time frame {p1.time_frame}")
+                Logger.error(p1.short_rep())
+                Logger.error(p2.short_rep())
                 continue
-            x1, y1 = p1.get_top_left_position()
-            x2, y2 = p2.get_top_left_position()
+            x1, y1 = p1.get_position()
+            x2, y2 = p2.get_position()
             dt = p2.time_frame - p1.time_frame
             self.velocity_vectors[i][0] = (x2 - x1) / dt
             self.velocity_vectors[i][1] = (y2 - y1) / dt
@@ -371,7 +403,7 @@ class Trajectory:
             Calculate and return the average velocity averaged over velocities at all time
             frames of the underlying particle.
         """
-        if not self._initialize_velocity_vectors():
+        if not self._compute_velocity_vectors():
             return float("nan")
         return self.avg_velocity
 
@@ -379,7 +411,7 @@ class Trajectory:
         """
         Calculate the maximum instantaneous velocity between two consecutive positions.
         """
-        if not self._initialize_velocity_vectors():
+        if not self._compute_velocity_vectors():
             return float("nan")
         return np.max(np.linalg.norm(self.velocity_vectors, axis=1))
 
@@ -387,10 +419,10 @@ class Trajectory:
         """
         Get the maximum angle between any two consecutive velocity vectors.
         """
-        if not self._initialize_velocity_vectors():
+        if not self._compute_velocity_vectors():
             return float("nan")
         elif len(self.velocity_vectors) < 2:
-            Logger.warning("Calculate angle for one velocity vector.")
+            Logger.warning("Cannot compute angle for one velocity vector.")
             return 0.0
 
         angles = np.zeros(len(self.velocity_vectors) - 1)
@@ -405,9 +437,9 @@ class Trajectory:
     def get_velocity_angle_full(self) -> float:
         """
         Get the angle between the first non-zero velocity vectors from the start
-        and from the end.
+        and the last non-zero velocity vector at the end.
         """
-        if not self._initialize_velocity_vectors():
+        if not self._compute_velocity_vectors():
             return float("nan")
         elif len(self.velocity_vectors) < 2:
             Logger.warning("Calculate angle for one velocity vector.")
@@ -439,18 +471,8 @@ class Trajectory:
         """
         sum = 0
         for p in self.ptcls:
-            sum += p.get_area()
+            sum += p.get_size()
         return sum / len(self.ptcls)
-
-
-
-    #def predict_next_location(self) -> List[float]:
-    #    """
-    #        Return a pair of x, y values as the predicted position at the next time frame.
-    #    """
-    #    last_position = self.ptcls[-1].positions
-    #    new_position = np.add(last_position, self.avg_velocity * commons.TIMEFRAMELENGTH)
-    #    return new_position
 
     def reset(self):
         """
@@ -458,8 +480,8 @@ class Trajectory:
             appended to the trajectory. A reset might be needed becuase appending of
             this new particle could change these post-processing properties.
         """
-        self.start_time = 0
-        self.end_time = 0
+        self.start_time = -1
+        self.end_time = -1
         self.avg_velocity = float("nan")
         self.velocity_vectors = None
         self.__sorted = False

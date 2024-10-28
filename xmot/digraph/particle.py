@@ -17,7 +17,7 @@ class Particle:
                                         This value is primarily used in velocity analysis, not for
                                         locating the particle, since it's Kalman-filter adjusted.
         bbox           : [int, int]     Width (in x) and height (in y) in pixels of the bbox,
-                                        predicted from the Kalman filter.
+                                        predicted from and adjusted by the Kalman filter.
 
     (Optional:)
         id             : int            ID of a particle
@@ -25,7 +25,7 @@ class Particle:
                                         as time unit in the diagraph.
         contour        : numpy.ndarray  Contour from OpenCV. The shape is always (n, 1, 2).
                                         "n" is the number of points in this contour. This contour
-                                        is the model detected contour from the detection step. For
+                                        is the model-detected contour from the detection step. For
                                         shape detection and the exact location of the particle, use
                                         values derived from this contour. The 'position' and 'bbox'
                                         are Kalman filter adjusted.
@@ -59,7 +59,7 @@ class Particle:
 
         # Derived values:
         # These values are derived once at initialization and not changed afterwards.
-        if self.contour is not None:
+        if self.contour is not None and len(self.contour) != 0:
             _x, _y, _w, _h = cv.boundingRect(self.contour)
             self.cnt_bbox_area = _w * _h
             self.contour_area = round(cv.contourArea(self.contour))
@@ -108,10 +108,12 @@ class Particle:
 
     def set_bbox(self, bbox):
         self.bbox = copy.deepcopy(bbox)
-        self.area = self.bbox[0] * self.bbox[1]
 
     def get_bbox(self):
         return copy.deepcopy(self.bbox)
+
+    def get_contour(self):
+        return self.contour if self.contour is not None else None
 
     def get_contour_bbox_torch(self) -> List[int]:
         """
@@ -149,15 +151,6 @@ class Particle:
         """
         return self.bbox[0] * self.bbox[1]
 
-    #def get_area(self):
-    #    return self.bbox[0] * self.bbox[1]
-
-    def set_bubble(self, bubble):
-        self.bubble = bubble  # For the particle objects, don't use deepcopy.
-
-    def have_bubble(self):
-        return self.bubble != None
-
     def get_area_contour(self, regenerate=False) -> int:
         """
         Return the area of the contour. Return -1 when there is no contour.
@@ -181,13 +174,38 @@ class Particle:
 
     def get_position_contour(self, regenerate=False) -> List[int]:
         """
-        Return the centroid position of the contour. Return None when there is no contour.
+        Return the centroid position of the contour. This is the unadjusted position directly
+        from the detection step. Return None when there is no contour.
         """
         if self.contour == None:
             return None
         elif self.contour_centroid == None or regenerate:
             self.contour_centroid = get_contour_center(self.contour)
         return copy.deepcopy(self.contour_centroid)
+
+    #def get_area(self):
+    #    return self.bbox[0] * self.bbox[1]
+
+    def get_size(self) -> float:
+        """
+        This function should be used when trying to get the 'size' of the particle in analysis.
+        It guarantees to return a positive size of the particle.
+
+        Return the contour area when contour is not None. Otherwise, return the inscribed ellipse
+        of the bbox predicted from Kalman-filter.
+        """
+        if self.contour is not None:
+            size = self.get_area_contour()
+        else:
+            # Area of inscribed ellipse.
+            size = math.pi * (self.bbox[0] / 2) * (self.bbox[1] / 2)
+        return size
+
+    def set_bubble(self, bubble):
+        self.bubble = bubble  # For the particle objects, don't use deepcopy.
+
+    def have_bubble(self):
+        return self.bubble != None
 
     def set_shape(self, shape: str):
         self.shape = shape
@@ -215,24 +233,24 @@ class Particle:
 
         return "N/A"
 
+    def short_rep(self) -> str:
+        return f"ID: {self.id:4d}; time: {self.time_frame:4d}; position: " + "{:4d}, {:4d}".format(*self.position)
+
     def __str__(self) -> str:
         position_cnt = self.get_position_contour()
         if self.get_position_contour() is None:
             position_cnt = self.position
 
-        contour_area = self.get_area_contour()
-        if contour_area == -1:
-            # Approximate the contour area by assuming it's a circle.
-            contour_area = round(self.get_area_bbox() * math.pi  / 4.0)
-
         # When there's no contour, use the Kalman filter predicted values as contour position
         # and contour area. Although Kalman filter only predicts bbox area, we use it to approximate
         # the contour area.
+
+        # Particle size is equivalent to contour area when a contour exists.
         string = "Particle_id : {:4d}; Time_frame: {:4d}; ".format(self.id, self.time_frame) + \
                  "x, y: {:6d}, {:6d}; ".format(*self.position) + \
                  "bbox (w, h): {:6d}, {:6d}; ".format(*self.bbox) + \
+                 "Particle size: {:6d}; ".format(self.get_size()) + \
                  "Contour centroid: {:6d}, {:6d}; ".format(*position_cnt) + \
-                 "Contour Area: {:8d}; ".format(contour_area) + \
                  "Type: {:12s}; ".format(self.type) + \
                  "Shape: {:12s}; ".format(self.shape) + \
                  ""

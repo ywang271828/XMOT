@@ -87,6 +87,7 @@ def drawBlobs(img, blobs):
     return img
 
 def writeBlobs(blobs, file, frameID):
+
     """
     Output positions and bbox dimension (Kalman filters' states) at each frame.
     """
@@ -500,8 +501,8 @@ def mask_to_cnt(mask: np.ndarray) -> Tuple[np.ndarray, int, int]:
     """Get the contour from a binary mask.
 
     This function should be the conjugate function of cnt_to_mask(). We can use
-    cv.matchSapes(cnt_1, cnt_2, cv.CONTOURS_MATCH_I1, 0.0) to check shape similarity, and 0.0 means
-    the contours are exactly the same.
+    cv.matchShapes(cnt_1, cnt_2, cv.CONTOURS_MATCH_I1, 0.0) to check shape similarity of the origina
+    and regenerated contour. A value of 0.0 means the contours are exactly the same.
 
     Args:
         mask: The mask of one particle. It should has the dimension (1, height, width)
