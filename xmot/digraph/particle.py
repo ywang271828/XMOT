@@ -52,7 +52,7 @@ class Particle:
         #self.x = self.position[0]
         #self.y = self.position[1]
         self.bubble = bubble
-        self.contour = contour
+        self.contour = np.array(contour).astype(np.int32) if contour is not None else None
         self.shape = shape
         self.type = type
         self.path_img = path_img
@@ -109,16 +109,17 @@ class Particle:
     def set_bbox(self, bbox):
         self.bbox = copy.deepcopy(bbox)
 
-    def get_bbox(self):
+    def get_bbox(self) -> List[int]:
         return copy.deepcopy(self.bbox)
 
     def get_contour(self):
-        return self.contour if self.contour is not None else None
+        # Check for array(None, dtype=object)
+        return self.contour if self.contour is not None and self.contour.shape != () else None
 
     def get_contour_bbox_torch(self) -> List[int]:
         """
         Get the bbox in the torch convention, i.e. the coordinates of the upper left
-        and lower right corner of the bounding box.
+        and lower right corner of the bounding box. Guarantee to return a non-Null value.
 
         Since this function is mostly used in benchmark and drawing bbox on images, it should
         always return a non-Null value. Therefore, if there exists a contour, the bounding box is
@@ -155,7 +156,7 @@ class Particle:
         """
         Return the area of the contour. Return -1 when there is no contour.
         """
-        if self.contour == None:
+        if self.contour is None:
             return -1
         elif self.contour_area == -1 or regenerate:
             self.contour_area = round(cv.contourArea(self.contour))
@@ -165,7 +166,7 @@ class Particle:
         """
         Return the area of the enclosing bbox of the contour. Return -1 when there is no contour.
         """
-        if self.contour == None:
+        if self.contour is None:
             return -1
         elif self.cnt_bbox_area == -1 or regenerate:
             _x, _y, _w, _h = cv.boundingRect(self.contour)
@@ -177,9 +178,9 @@ class Particle:
         Return the centroid position of the contour. This is the unadjusted position directly
         from the detection step. Return None when there is no contour.
         """
-        if self.contour == None:
+        if self.contour is None:
             return None
-        elif self.contour_centroid == None or regenerate:
+        elif self.contour_centroid is None or regenerate:
             self.contour_centroid = get_contour_center(self.contour)
         return copy.deepcopy(self.contour_centroid)
 
@@ -222,7 +223,7 @@ class Particle:
     def get_label(self):
         label = self.type
         if self.type == "particle":
-            if self.bubble == None:
+            if self.bubble is None:
                 return "{:s}_{:s}_{:s}".format(self.type, "no-bubble", self.shape)
             else:
                 return "{:s}_{:s}_{:s}".format(self.type, "bubble", self.shape)
@@ -249,7 +250,7 @@ class Particle:
         string = "Particle_id : {:4d}; Time_frame: {:4d}; ".format(self.id, self.time_frame) + \
                  "x, y: {:6d}, {:6d}; ".format(*self.position) + \
                  "bbox (w, h): {:6d}, {:6d}; ".format(*self.bbox) + \
-                 "Particle size: {:6d}; ".format(self.get_size()) + \
+                 "Particle size: {:6f}; ".format(self.get_size()) + \
                  "Contour centroid: {:6d}, {:6d}; ".format(*position_cnt) + \
                  "Type: {:12s}; ".format(self.type) + \
                  "Shape: {:12s}; ".format(self.shape) + \
