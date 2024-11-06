@@ -4,7 +4,7 @@ from pathlib import Path
 import copy
 import cv2 as cv
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 
 from xmot.logger import Logger
@@ -13,6 +13,7 @@ from xmot.digraph.trajectory import Trajectory
 from xmot.digraph.particle import Particle
 import xmot.digraph.commons as commons
 import xmot.digraph.utils as utils
+from xmot.mot.utils import cen2cor, draw_dashed_rectangle
 import xmot.analyzer.shapeDetector as shape_detector
 
 class Digraph:
@@ -601,13 +602,13 @@ class Digraph:
                     if t != traj.get_start_time():
                         # p is not the first particle in this trajectory
                         p = traj.get_particle(t)
-                        if p == None: continue
+                        if p is None: continue
                         p2 = None
                         for t2 in range(t - 1, traj.get_start_time() - 1, -1):
                             p2 = traj.get_particle(t2)
                             if p2 != None: break
 
-                        if p2 == None:
+                        if p2 is None:
                             Logger.error("Something is wrong with this trajectory. " +
                                          "No particle exists before this frame which is not " +
                                          "the starting frame. {:d} {:d}".format(traj.id, t))
@@ -651,7 +652,7 @@ class Digraph:
     def draw_events(self, images, outdir, type: str = None, prefix: str = None):
         """
         Highlight nodes whose type is not 'start' or 'end' and the involving trajectories.
-        Draw the bbox of the nodes, contours and IDs of the particles.
+        Draw the bbox of the nodes, contours and IDs of the particles in the trajectories.
 
         Args:
             images: The original images. Overlay the events on them.
@@ -668,6 +669,7 @@ class Digraph:
             if type is not None and event_type != type:
                 continue
 
+            # Only skip the 'start' and 'end' type.
             if event_type == 'start' or event_type == 'end':
                 continue
 
@@ -676,57 +678,122 @@ class Digraph:
             event_dir = outdir_path.joinpath(f'{event_type}_{event_id}')
             event_dir.mkdir(parents=True, exist_ok=True)
             prefix = prefix if prefix is not None else f'{event_type}_{event_id}'
-            # Get the time frames. Get the bboxes of the particles within these time frames.
-            # Draw time frame, node bboxes, particle contours with ids in the image
-            # Save the image to event_dir with time_frame number.
-            for time in range(node.get_start_time(), node.get_end_time() + 1):
-                img_result = cv.cvtColor(images[time], cv.COLOR_GRAY2BGR)
+            event_start_time = node.get_start_time()
+            event_end_time = node.get_end_time()
+
+            # Pre-event: Draw 5 frame pre event
+            for time in range(max(event_start_time - 5, 0), event_start_time):
+                # opencv draw objects inplace. Use a copy to not change the original images.
+                img_result = copy.deepcopy(images[time])
+                img_result = cv.cvtColor(img_result, cv.COLOR_GRAY2BGR)
                 # Write the time frame on the upper-left corner in green.
-                img_result = cv.putText(
+                cv.putText(
                     img_result, str(time), np.array((30, 30)), cv.FONT_HERSHEY_SIMPLEX,
                     fontScale=0.75, color=(0, 255, 0), thickness = 1, lineType=cv.LINE_AA
                 )
 
-                # Draw the node bbox in green.
-                img_result = cv.rectangle(
+                has_traj = False # Flag to control whether trajectories exist at this time frame
+                                 # pre-event.
+                for traj in node.get_in_trajs(): # Only incoming trajs exist pre event.
+                    if traj.get_start_time() > time:
+                        continue
+
+                    img_result = Digraph._draw_particle_with_id(traj, time, img_result, in_traj=True)
+                    has_traj = True
+
+                if has_traj:
+                    # Only save image when trajectories exist at this time frame before the event.
+                    cv.imwrite(str(event_dir.joinpath(f"{prefix}_{time}.png")), img_result)
+
+            # During the event
+            for time in range(event_start_time, event_end_time + 1):
+                img_result = copy.deepcopy(images[time])
+                img_result = cv.cvtColor(img_result, cv.COLOR_GRAY2BGR)
+
+                cv.putText(
+                    img_result, str(time), np.array((30, 30)), cv.FONT_HERSHEY_SIMPLEX,
+                    fontScale=0.75, color=(0, 255, 0), thickness = 1, lineType=cv.LINE_AA
+                )
+
+                # Draw the bbox enclosing the event in green.
+                cv.rectangle(
                     img_result, *utils.torch_bbox_to_coordinates(node.get_bbox_node()),
                     color=(0, 255, 0), thickness = 2
                 )
-                #contours = []
-                for traj in node.get_in_trajs():
-                    p = traj.get_particle_by_time(time)
-                    if p is None or p.get_contour() is None:
-                        # At this given time frame, there's no particle in the trajectory or the
-                        # particle is inferred by Kalman filters (not detected at detection step).
-                        # The former case happen when the event is detected within the
-                        # BACK_TRACE_LIMIT.
 
-                        # Draw estimated particle bbox with dashed lines.
-                        _position = traj.get_position_by_time(time)
-                    else:
-                        #contours.extend(p.get_contour())
-                        _bbox = p.get_contour_bbox_torch()
-                        # Write the particle ID (eq. to traj ID) at upper right corner of particle bbox.
-                        img_result = cv.putText(
-                            img_result, str(traj.get_id()), np.array((_bbox[2] + 5, _bbox[1] - 5)),
-                            cv.FONT_HERSHEY_SIMPLEX, fontScale=0.75, color=(0, 0, 255), thickness = 2,
-                            lineType=cv.LINE_AA
-                        )
-
-                        # Draw particle contours (not Kalman Filter adjusted positions) in red.
-                        img_result = cv.drawContours(
-                            img_result, p.get_contour(), -1, color=(0, 0, 255), thickness=2
-                        )
-
-
+                for traj in node.get_in_trajs() + node.get_out_trajs():
+                    img_result = Digraph._draw_particle_with_id(traj, time, img_result, node.is_in_traj(traj))
 
                 # Save the image
                 cv.imwrite(str(event_dir.joinpath(f"{prefix}_{time}.png")), img_result)
+
+            # Post-event: Draw 5 frames after the event
+            for time in range(event_end_time + 1, min(event_end_time + 6, len(images))):
+                img_result = copy.deepcopy(images[time])
+                img_result = cv.cvtColor(img_result, cv.COLOR_GRAY2BGR)
+                cv.putText(
+                    img_result, str(time), np.array((30, 30)), cv.FONT_HERSHEY_SIMPLEX,
+                    fontScale=0.75, color=(0, 255, 0), thickness = 1, lineType=cv.LINE_AA
+                )
+
+                has_traj = False # Flag to control whether trajectories exist at this time frame
+                                 # pre-event.
+                for traj in node.get_out_trajs(): # Only outgoing trajs exist pre event.
+                    if traj.get_end_time() < time:
+                        continue
+
+                    img_result = Digraph._draw_particle_with_id(traj, time, img_result, in_traj=False)
+                    has_traj = True
+
+                if has_traj:
+                    # Only save image when trajectories exist at this time frame before the event.
+                    cv.imwrite(str(event_dir.joinpath(f"{prefix}_{time}.png")), img_result)
 
             # Increment the event count.
             counts[event_type] = event_id + 1
 
 
+    def _draw_particle_with_id(traj: Trajectory, time: str, img: np.ndarray, in_traj: bool) -> np.ndarray:
+        p = traj.get_particle_by_time(time)
+        if p is None or p.get_contour() is None:
+            # At this given time frame, there's no particle in the trajectory or the
+            # particle is inferred by Kalman filters (not detected at detection step).
+            # The former case happen when the event is detected within the
+            # BACK_TRACE_LIMIT.
+
+            # Draw an estimated particle bbox with dashed lines in red.
+            _position = traj.get_position_by_time(time)
+
+            if _position is None: # trajectory is away from 'time' by more than BACK_TRACE_LIMIT
+                return img
+
+            if in_traj:
+                _bbox = traj.get_end_particle().get_bbox()
+            else:
+                _bbox = traj.get_start_particle().get_bbox()
+            _bbox_torch = cen2cor(*_position, *_bbox)
+            img = draw_dashed_rectangle(
+                img, *utils.torch_bbox_to_coordinates(_bbox_torch),
+                color=(0, 0, 255), thickness = 1, dash_length=2, gap_length=1,
+                inplace=True
+            )
+        else:
+            # Draw particle contours (not Kalman Filter adjusted positions) in red.
+            img = cv.drawContours(
+                img, [p.get_contour()], -1, color=(0, 0, 255), thickness=1
+            )
+
+            _bbox_torch = p.get_contour_bbox_torch()
+
+        # Write the particle ID (eq. to traj ID) at upper right corner of particle bbox.
+        cv.putText(
+            img, str(traj.get_id()),
+            (int(_bbox_torch[2] + 5), int(_bbox_torch[1] - 5)),
+            cv.FONT_HERSHEY_SIMPLEX, fontScale=0.75, color=(0, 0, 255), # BGR
+            thickness=1, lineType=cv.LINE_AA
+        )
+
+        return img
 
     def __str__(self):
         """
