@@ -264,8 +264,8 @@ class Trajectory:
         if not self.__sorted:
             self.sort_particles()
 
-        if self.get_start_time() - time <= BACK_TRACE_LIMIT:
-            # 'time' is before the start of the trajectory
+        if time < self.get_start_time() and self.get_start_time() - time <= BACK_TRACE_LIMIT:
+            # 'time' is before (smaller) the start of the trajectory
             # Back trace to estimate positions in past time (no more than 3 frames).
             # Use instant velocity at the first two frames to backtrace positions
             # <TODO> We should use the average of as many as possible instant velocities that don't
@@ -283,7 +283,7 @@ class Trajectory:
             return_position[0] = p1[0] - (p2[0] - p1[0]) / delta_t * (self.ptcls[0].get_time_frame() - time)
             return_position[1] = p1[1] - (p2[1] - p1[1]) / delta_t * (self.ptcls[0].get_time_frame() - time)
             return return_position
-        elif time - self.get_end_time() <= BACK_TRACE_LIMIT:
+        elif time > self.get_end_time() and time - self.get_end_time() <= BACK_TRACE_LIMIT:
             # 'time' is after the end of the trajectory
             # Forward trace to predict positions of particles in a future time.
             Logger.debug("Predict position of trajectory-{:d} at frame-{:d}.".format(self.id, time))
@@ -313,7 +313,7 @@ class Trajectory:
             self.sort_particles()
 
         if time < self.start_time or time > self.end_time:
-            Logger.warning(f"Specified time is outside the life time of trajectory-{self.id}: " + \
+            Logger.debug(f"Specified time is outside the life time of trajectory-{self.id}: " + \
                          f"{time:4d} {self.start_time:4d} {self.end_time:4d}")
             return None
 
@@ -422,7 +422,7 @@ class Trajectory:
         if not self._compute_velocity_vectors():
             return float("nan")
         elif len(self.velocity_vectors) < 2:
-            Logger.warning("Cannot compute angle for one velocity vector.")
+            Logger.debug("Cannot compute angle for one velocity vector.")
             return 0.0
 
         angles = np.zeros(len(self.velocity_vectors) - 1)
@@ -430,7 +430,7 @@ class Trajectory:
             angles[i] = vector_angle(self.velocity_vectors[i],
                                      self.velocity_vectors[i + 1])
         if np.sum(np.isnan(angles)) == len(angles):
-            Logger.warning("All velocity vectors are zero. Cannot get a valid angle")
+            Logger.debug(f"All velocity vectors are zero. Cannot get a max angle. {self.id}")
             return float("nan")
         return np.nanmax(angles) # exclude "nan"
 
@@ -442,7 +442,7 @@ class Trajectory:
         if not self._compute_velocity_vectors():
             return float("nan")
         elif len(self.velocity_vectors) < 2:
-            Logger.warning("Calculate angle for one velocity vector.")
+            Logger.debug("Calculate angle for one velocity vector.")
             return 0.0
 
         norms = np.linalg.norm(self.velocity_vectors, axis=1)
@@ -458,7 +458,7 @@ class Trajectory:
                 break
 
         if index_i >= index_j: # don't allow the same vector.
-            Logger.warning("All velocity vectors are zero. Cannot get a valid angle.")
+            Logger.debug(f"All velocity vectors are zero. Cannot get a full angle. {self.id}")
             return float("nan")
 
         return vector_angle(self.velocity_vectors[index_i],
