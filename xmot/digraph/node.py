@@ -51,21 +51,29 @@ class Node:
         # Deprecated
         # self.bbox_xy = None                     # upper-left and lower-right cornor of bbox
 
-    def add_in_traj(self, traj):
+    def add_in_traj(self, traj: Trajectory):
         self.in_trajs.append(traj)
-        self.ptcl_ids.add(traj.id)
+        self.ptcl_ids.add(traj.get_id())
         self.reset()
 
-    def add_out_traj(self, traj):
+    def add_out_traj(self, traj: Trajectory):
         self.out_trajs.append(traj)
-        self.ptcl_ids.add(traj.id)
+        self.ptcl_ids.add(traj.get_id())
         self.reset()
 
     def get_out_trajs(self):
         return self.out_trajs
 
+    def is_out_traj(self, traj: Trajectory) -> bool:
+        ids = [t.get_id() for t in self.out_trajs]
+        return traj.get_id() in ids
+
     def get_in_trajs(self):
         return self.in_trajs
+
+    def is_in_traj(self, traj: Trajectory) -> bool:
+        ids = [t.get_id() for t in self.in_trajs]
+        return traj.get_id() in ids
 
     def get_start_time(self):
         """
@@ -120,7 +128,7 @@ class Node:
 
         TODO: Use the weighted position at the event time (e.g. median of start/end times of trajs).
         """
-        if self.position == None:
+        if self.position is None:
             total_size = 0
             total_x = total_y = .0
 
@@ -231,7 +239,7 @@ class Node:
 
     def __str__(self):
         string = "Node: Type: {:15s}; Incoming trajectories id: {:16s}; Outgoing trajectories id: {:16s}"
-        string.format(
+        string = string.format(
             self.get_type(),
             ",".join([str(traj.id) for traj in self.in_trajs]),
             ",".join([str(traj.id) for traj in self.out_trajs])
