@@ -23,7 +23,7 @@ def generate_video(input_dir, output, ext, start_id, end_id, fps, res, format):
 
     Only include [start_id, end_id] frames from the input folder.
     """
-    if ext == None:
+    if ext is None:
         files = [os.path.join(input_dir, f) for f in os.listdir(input_dir)]
         files = [f for f in files if os.path.isfile(f)]
         for f in files:
@@ -40,7 +40,7 @@ def generate_video(input_dir, output, ext, start_id, end_id, fps, res, format):
         print(f"No valid image files found in {input_dir} with extension {ext}")
 
     images = [cv.imread(f) for f in files] # color pics are already in BGR order, not RBG
-    if res == None:
+    if res is None:
         # In the format of (width, height) (or (column, row))
         # But the shape is (height, width)
         res = (images[0].shape[1], images[0].shape[0])

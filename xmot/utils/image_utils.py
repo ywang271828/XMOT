@@ -75,7 +75,7 @@ def subtract_brightfield(orig_images: List[np.ndarray], image_brightfield: np.nd
     """
     if len(image_brightfield.shape) == 3:
         img_bf = cv.imread(brightfield, cv.IMREAD_GRAYSCALE)
-    if prefix == None:
+    if prefix is None:
         image_names = orig_image_names
     else:
         image_names = [f"{prefix}_{name.split('_')[-1]}" for name in orig_image_names]
@@ -111,7 +111,7 @@ def load_images_from_dir(dir, start_id=0, end_id=sys.maxsize, ext=None, grayscal
 
     TODO: Refactor to use imageio.get_reader(). Don't reinvent wheel.
     """
-    if ext == None:
+    if ext is None:
         files = [os.path.join(dir, f) for f in os.listdir(dir)]
         files = [f for f in files if os.path.isfile(f)]
         for f in files:

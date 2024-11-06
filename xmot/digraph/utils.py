@@ -164,7 +164,7 @@ def generate_video(images, output: str, fps: int = 24,
     """
     # Collect info from images
     # If resolution not given, use maximum size of all images.
-    if res == None:
+    if res is None:
         # image are numpy.ndarray. image.shape = (height, width, number of color channels)
         max_height = max([i.shape[0] for i in images])
         max_width = max([i.shape[1] for i in images])

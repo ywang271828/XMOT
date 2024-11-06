@@ -31,7 +31,7 @@ def process(input_dir, start_id, end_id, ext, crop):
     # This function performs as a common entry point of all subcommands. It load all images
     # in the INPUT_DIR and assign it to the global "orig_images" variable.
     global orig_images, orig_ext, orig_image_names
-    if ext == None:
+    if ext is None:
         files = [os.path.join(input_dir, f) for f in os.listdir(input_dir)]
         files = [f for f in files if os.path.isfile(f)]
         for f in files:
@@ -41,10 +41,10 @@ def process(input_dir, start_id, end_id, ext, crop):
         files = [f for f in files if f.endswith(ext)]
     else:
         files = [f for f in os.listdir(input_dir) if f.endswith(ext)]
-    
+
     files = natsort.natsorted(files)
     #files.sort(key=lambda f: int(re.match(".*_([a-zA-Z]*)([0-9]+)\.([a-z]+)", f).group(2)))
-    
+
     files = [f for f in files if start_id <= int(re.match(".*_([a-zA-Z]*)([0-9]+)\.([a-zA-Z]+)", f).group(2)) <= end_id]
 
     if len(files) == 0:
@@ -80,8 +80,8 @@ def rename_images(output_dir, prefix, new_start_id, new_ext):
 def format_transform(output_dir, prefix, new_ext):
     """
     Tranform the input images from INPUT_DIR to new format NEW_EXT.
-    
-    Image names are kept intact. If PREFIX is specified, prefix of old names will be replaced, 
+
+    Image names are kept intact. If PREFIX is specified, prefix of old names will be replaced,
     but id will be kept.
     """
     global orig_images, orig_image_names
@@ -119,8 +119,8 @@ def subtract_brightfield(output_dir, brightfield, prefix, scale, use_scale, shif
         print("Cropping brightfield image with : " + str(crop))
         x1, y1, x2, y2 = crop
         img_bf = img_bf[y1:y2, x1:x2]
-    
-    if prefix == None:
+
+    if prefix is None:
         image_names = orig_image_names
     else:
         image_names = [f"{prefix}_{name.split('_')[-1]}" for name in orig_image_names]
