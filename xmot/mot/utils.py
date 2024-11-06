@@ -3,13 +3,14 @@
 Utility functions
 """
 
+import math
 import numpy as np
 import cv2 as cv
-import math
 import json
-from typing import List, Tuple
-from xmot.logger import Logger
+from typing import List, Tuple, Union
 from sklearn.mixture import BayesianGaussianMixture
+from PIL import Image
+from copy import copy
 from xmot.utils.image_utils import get_contour_center
 
 def imosaic(img_list, size=None, gray=False):
@@ -168,7 +169,7 @@ def cen2cor(cenx,ceny,w,h):
 
     return x1,y1,x2,y2
 
-def costMatrix(states, blobs, fixed_cost=100.):
+def costMatrix(states, blobs, fixed_cost=80.):
     boxlen = len(states)
     blolen = len(blobs)
 
@@ -547,3 +548,79 @@ def state_from_mask(mask: np.ndarray) -> Tuple[int, int, int, int]:
     x, y, w, h = cv.boundingRect(contour)
     centroid_x, centroid_y = get_contour_center(contour)
     return centroid_x, centroid_y, w, h
+
+
+def opencv_to_pillow(cv_image) -> Image:
+    """
+    Converts an OpenCV image to a Pillow image.
+    Automatically detects color or grayscale format.
+    """
+    if len(cv_image.shape) == 2:  # Grayscale
+        return Image.fromarray(cv_image)
+    elif len(cv_image.shape) == 3 and cv_image.shape[2] == 3:  # Color
+        cv_rgb_image = cv.cvtColor(cv_image, cv.COLOR_BGR2RGB)
+        return Image.fromarray(cv_rgb_image)
+
+def pillow_to_opencv(pil_image) -> np.ndarray[np.uint8]:
+    """
+    Converts a Pillow image to an OpenCV image.
+    Automatically detects color or grayscale format.
+    """
+    np_image = np.array(pil_image)
+    if len(np_image.shape) == 2:  # Grayscale
+        return np_image
+    elif len(np_image.shape) == 3 and np_image.shape[2] == 3:  # Color
+        return cv.cvtColor(np_image, cv.COLOR_RGB2BGR)
+
+
+def draw_dashed_rectangle(img: np.ndarray[np.uint8], top_left, bottom_right, color=(0, 0, 0),
+                          dash_length=2, gap_length=1, thickness=1, inplace=True) -> np.ndarray[np.uint8]:
+    """
+    Draws a dashed rectangle on an OpenCV image.
+
+    Parameters:
+    - img: np.ndarray - OpenCV image (grayscale or color)
+    - top_left: tuple - Coordinates of the top-left corner (x, y)
+    - bottom_right: tuple - Coordinates of the bottom-right corner (x, y)
+    - color: tuple - Color of the rectangle in BGR (for color image) or single value (for grayscale)
+    - dash_length: int - Length of each dash
+    - gap_length: int - Length of the gap between dashes
+    - thickness: int - Thickness of the dashed line
+    - inplace: bool - Draw on the original image or get a copy.
+    """
+    x1, y1 = top_left
+    x2, y2 = bottom_right
+
+    img_result = copy.deepcopy(img) if not inplace else img
+
+    def draw_dashed_line(start, end):
+        """Draws a dashed line between two points."""
+        line_length = np.sqrt((end[0] - start[0])**2 + (end[1] - start[1])**2)
+        dashes = math.floor(line_length / (dash_length + gap_length))
+        for i in range(dashes):
+            #start_dash = (
+            #    int(start[0] + (i * (dash_length + gap_length))),
+            #    int(start[1] + (i * (dash_length + gap_length)))
+            #)
+            #end_dash = (
+            #    int(start[0] + (i * (dash_length + gap_length)) + gap_length),
+            #    int(start[1] + (i * (dash_length + gap_length)) + gap_length)
+            #)
+            start_dash = (
+                int(start[0] + (end[0] - start[0]) * (i * (dash_length + gap_length) / line_length)),
+                int(start[1] + (end[1] - start[1]) * (i * (dash_length + gap_length) / line_length))
+            )
+            end_dash = (
+                int(start[0] + (end[0] - start[0]) * ((i * (dash_length + gap_length) + dash_length) / line_length)),
+                int(start[1] + (end[1] - start[1]) * ((i * (dash_length + gap_length) + dash_length) / line_length))
+            )
+
+            cv.line(img_result, start_dash, end_dash, color, thickness)
+
+    # Draw dashed lines for each side of the rectangle
+    draw_dashed_line((x1, y1), (x2, y1))  # Top
+    draw_dashed_line((x2, y1), (x2, y2))  # Right
+    draw_dashed_line((x2, y2), (x1, y2))  # Bottom
+    draw_dashed_line((x1, y2), (x1, y1))  # Left
+
+    return img_result
