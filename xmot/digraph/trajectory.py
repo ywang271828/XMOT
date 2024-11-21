@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Union
 import numpy as np
 import math
 import copy
@@ -69,6 +69,72 @@ class Trajectory:
                                         # will be wrong if particles are not in chronological order.
                                         # Sorting is requried before calculation of any of these
                                         # properties.
+
+    @staticmethod
+    def break_trajectory(traj: Trajectory, draw: bool = False) -> Union[Trajectory, None]:
+        """
+        Inspecting the particles of the trajectory and see whether the trajectory consists of
+        different particles. If so, break them into separate ones.
+
+        Kalman filters could group different particles in one trajectory due to the way cost_matrix
+        is defined. The size of the particle is emphasized as much as the position. Particles
+        of vastly different size but at close region could be grouped into one trajectory. This
+        leads to micro-explosion lacking parent trajectory since the parent particle is grouped
+        with one of the children trajectory. This function mainly checks the particle size (
+        and velocity vectors). When there are abrupt and major changes in size and velocity vector,
+        we consider the given trajectory should be break into two distinct ones.
+
+        Args:
+            traj:       Trajectory to inspect
+            draw_dir:   Folder to draw the original and breakup trajectories into.
+
+        Return:
+            Trajectory | None: The new trajectory separated from the given trajectory
+        """
+        separate = False
+        traj._compute_velocity_vectors()
+
+        particles: List[Particle] = traj.get_particles()
+        change_ratios = []
+        change_values = []
+        for i in range(0, len(particles) - 1):
+            size_i = particles[i].get_size() # Guaranteed to have a non-zero size.
+            size_j = particles[i+1].get_size()
+            change_ratios.append(abs((size_i - size_j) / size_i))
+            change_values.append(abs(size_i - size_j))
+
+        indices = [
+            i
+            for i, (ratio, value) in enumerate(zip(change_ratios, change_values))
+            if ratio > 0.5 and value > 50
+        ]
+
+        time_frames = [particles[i+1].get_time_frame() for i in indices]
+
+        # Criterion:
+        # - Change over 50% and with an absolute change above 50 pixel**2.
+        # - Have one and only one of such case.
+        # - If breakup, the new trajectory will have significant life time (more than 2 frames)
+        if len(indices) == 1 and traj.get_end_time() - time_frames[0] > 2:
+            separate = True
+
+        # TODO: Should we have another criterion for velocity vectors?
+
+        if not separate:
+            return None
+
+        # From break_time onwards, particles belong to the new trajectory.
+        break_time = particles[indices[0] + 1].get_time_frame()
+        Logger.basic(f"Breaking up trajectory-{traj.get_id()} at {break_time}")
+
+        # Note: shallow copy. We deliberately keep the same object references.
+        new_traj = Trajectory(id = -1, ptcls=particles[indices[0] + 1:])
+
+        traj.reset() # Mark as unsorted since the particle list change
+        for p in new_traj.get_particles():
+            traj.remove_particle(p)
+
+        return new_traj
 
 
     def merge_particles(self, particles: List[Particle]) -> bool:
@@ -164,6 +230,20 @@ class Trajectory:
         if self.__sorted:
             self.reset()
 
+    def remove_particle(self, particle: Particle) -> Particle:
+        """Remove the given particle from the trajectory. Match particle id and time."""
+        if self.__sorted:
+            self.reset()
+
+        # Don't need to worry about index shifting since we only remove one item.
+        for i, p in enumerate(self.ptcls):
+            if particle.get_id() == p.get_id() and particle.get_time_frame() == p.get_time_frame():
+                self.ptcls.pop(i)
+                del self.ptcl_time_map[p.get_time_frame()]
+                break
+
+        return p
+
     def set_start_node(self, node):
         self.start_node = node
 
@@ -189,6 +269,14 @@ class Trajectory:
     # Post-processing functions
     def get_id(self) -> int:
         return self.id
+
+    def set_id(self, id: int, overwrite_particle_id = True) -> None:
+        self.id = id
+
+        # Align particle id with trajectory id.
+        if overwrite_particle_id:
+            for p in self.ptcls:
+                p.set_id(id = self.id)
 
     def get_start_node(self):
         return self.start_node
@@ -317,9 +405,8 @@ class Trajectory:
                          f"{time:4d} {self.start_time:4d} {self.end_time:4d}")
             return None
 
-        for p in self.ptcls:
-            if p.time_frame == time:
-                return p
+        if time in self.ptcl_time_map:
+            return self.ptcl_time_map[time]
 
         Logger.debug(f"No particle exists for trajectory-{self.id} at the time: {time:4d}")
         return None
