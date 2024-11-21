@@ -92,7 +92,7 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
         cnt_areas.append(cv.contourArea(contours[i]))
     cnt_max_area = contours[cnt_areas.index(max(cnt_areas))] # The single contour with the largest area.
     cnt_areas = np.array(cnt_areas)
-    cnt_area_to_bbox_ratios = cnt_areas / particle.get_contour_bbox_area()
+    cnt_area_to_bbox_ratios = cnt_areas / particle.get_area_contour_bbox()
 
     max_area = cnt_areas.max()
     max_cnt_to_bbox_ratio = cnt_area_to_bbox_ratios.max()
@@ -195,7 +195,7 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
 
     if shape == "":
         _img_debug = np.copy(img_crop)
-        if particle.get_area() < CONFIDENT_PARTICLE_AREA:
+        if particle.get_size() < CONFIDENT_PARTICLE_AREA:
             shape = "undetermined_too_small"
         else:
             shape = "undetermined"
