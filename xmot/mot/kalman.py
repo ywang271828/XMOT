@@ -280,6 +280,12 @@ class MOT:
                 # can exist in the frame list.
                 _blob.delete_frame(self.frame_id)
 
+                # When ending a blob, remove the allowance frames added to keep it temporarily
+                # alive for MOT.UNDETECTION_THRESHOLD frames. So the blob can end properly without
+                # creating ghost particles.
+                for i in range(1, MOT.UNDETECTION_THRESHOLD + 1):
+                    _blob.delete_frame(self.frame_id - i)
+
     def __merge(self):
         """
         (Deprecated) A bbox merge strategy based on location and velocity information from Kalman Filters.

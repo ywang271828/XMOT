@@ -76,10 +76,18 @@ class Digraph:
 
         if len(self.trajs) == 0: # No particles detected in the video
             return
+
+        # Kalman filter has an allowance for particles to be undetected for a few frames before
+        # totally removing it. This leads to two fictious particles with no contours at the end
+        # of each Kalman filter trajectory. Check their existance and remove them.
+        for traj in self.trajs:
+            removed_ptcls = traj.remove_no_contour_particles_at_end()
+            for p in removed_ptcls:
+                self.ptcls.remove(p)
+
         # Check trajectories and break up the ones that should be separated
         # After this sanity check, trajectory id does not necessarily align with the chronological
         # order of start time.
-
         max_id = max([t.get_id() for t in self.trajs])
         for traj in self.trajs.copy(): # Avoid index shifting bug
             new_traj = Trajectory.break_trajectory(traj)

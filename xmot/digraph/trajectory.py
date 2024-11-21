@@ -3,8 +3,10 @@ from typing import List, TYPE_CHECKING, Union
 import numpy as np
 import math
 import copy
+from collections import Counter
 
 import xmot.digraph.commons as commons
+from xmot.mot.kalman import MOT
 from xmot.logger import Logger
 from xmot.digraph.utils import ptcl_distance, BACK_TRACE_LIMIT, vector_angle
 
@@ -109,13 +111,20 @@ class Trajectory:
             if ratio > 0.5 and value > 50
         ]
 
+        # time_frames[0] is the time point to break the trajectory
         time_frames = [particles[i+1].get_time_frame() for i in indices]
 
-        # Criterion:
+        # Criteria:
         # - Change over 50% and with an absolute change above 50 pixel**2.
         # - Have one and only one of such case.
-        # - If breakup, the new trajectory will have significant life time (more than 2 frames)
-        if len(indices) == 1 and traj.get_end_time() - time_frames[0] > 2:
+        # - If breakup, both the old and new trajectory will have significant life time (more than 2 frames)
+        if (
+            len(indices) == 1 and
+            traj.get_end_time() - time_frames[0] > 2 and
+            time_frames[0] - traj.get_start_time() > 2 and
+            traj.get_particle_by_time(time_frames[0]) is not None
+            #not traj.get_particle_by_time(time_frames[0]).close_to_edge()
+        ):
             separate = True
 
         # TODO: Should we have another criterion for velocity vectors?
@@ -243,6 +252,39 @@ class Trajectory:
                 break
 
         return p
+
+    def remove_no_contour_particles_at_end(self) -> List[Particle]:
+        """
+        The Kalman filter allows particles to remain undetected for a few frames before
+        removing them entirely. This results in two fictitious particles without
+        contours at the end of each Kalman filter trajectory. Check for their
+        existence and remove them.
+        """
+        if not self.__sorted:
+            self.sort_particles()
+
+        count = 0
+        removed_ptcls = []
+        for ptcl in self.ptcls[::-1]: # Reverse iteration.
+            if ptcl.contour is None:
+                self.ptcls.remove(ptcl)
+                del self.ptcl_time_map[ptcl.get_time_frame()]
+                count += 1
+                removed_ptcls.append(ptcl)
+                continue
+
+            break # Stop at first particle with contour.
+
+        if count > 0:
+            self.reset()
+
+        if count > MOT.UNDETECTION_THRESHOLD:
+            Logger.warning(
+                f"Removed {count} frames from the end of trajectory-{self.id}!" \
+                F" Should not be larger than {MOT.UNDETECTION_THRESHOLD}."
+            )
+
+        return removed_ptcls
 
     def set_start_node(self, node):
         self.start_node = node
@@ -561,6 +603,18 @@ class Trajectory:
             sum += p.get_size()
         return sum / len(self.ptcls)
 
+    def get_shape(self) -> str:
+        shapes = []
+        for p in self.ptcls:
+            shapes.append(p.get_shape())
+
+        counts = Counter(shapes)
+        traj_shape = counts.most_common(1)[0][0]
+
+        if traj_shape == "N/A":
+            return "undetermined"
+        return traj_shape
+
     def reset(self):
         """
             Reset post-processed properties of the trajectory when new particles are
@@ -582,6 +636,6 @@ class Trajectory:
                  f"Max instantaneous velocity: {self.get_instant_velocity_max():9.4f}; \t" + \
                  f"Max angle between velocity vectors: {self.get_velocity_angle_max():9.4f}; \t" + \
                  f"Angle between start and end velocity vectors: {self.get_velocity_angle_full():9.4f}; \t" + \
-                 f"Shape: {self.ptcls[0].get_shape():12s}" \
+                 f"Shape: {self.get_shape():12s}" \
                  #+ " " + str(self.velocity_vectors)
         return string
