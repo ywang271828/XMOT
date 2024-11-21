@@ -88,6 +88,7 @@ class Blob:
             mask: binary mask of the particle. Cannot be empty array.
         """
         if measurement is None:
+            # This blob is not detected in the latest frame. Temporarily keep it alive.
             # The mask must be non-empty for the first detected frame.
             img_height, img_width = self.masks[self.frames[0]].shape[-2:]
             self.masks[frame_id] = np.array([], dtype=bool).reshape([0, img_height, img_width])
@@ -100,7 +101,7 @@ class Blob:
         #self.bbox = np.array(cen2cor(state[0], state[1], state[2], state[3]))
         self.state = np.array([state[0], state[1], state[2], state[3]])
 
-        # TODO: The bbox might not enclose the mask since the bbox has been modified by the Kalman filter.
+        # Note! The bbox might not enclose the mask since the bbox has been modified by the Kalman filter.
         self.masks[frame_id] = mask
         cnt, _img_height, _img_width, = mask_to_cnt(mask)
         self.contours[frame_id] = cnt
@@ -233,15 +234,15 @@ class MOT:
             #m   = np.array(cor2cen(bbox[i]), dtype=np.float32)
             measurement = np.array(states[i], dtype=np.float32)
             ind = blob_ind[i]
-            if ind < self.blolen:  # Detected bbox match one of the existing blob.
+            if ind < self.blolen:  # Case 1: Detected bbox match one of the existing blob.
                 self.blobs[ind].correct(self.frame_id, measurement, mask[i])
                 self.blobs[ind].dead = 0  # Recount the number of undetected frames.
-            else:  # Detected bbox don't match any of the existing blob.
+            else:  # Case 2: Detected bbox don't match any of the existing blob.
                 # blob.idx starts from 1.
                 b = Blob(self.total_blobs + len(new_blobs) + 1, self.frame_id, states[i], mask[i])
                 new_blobs.append(b)
 
-        # For the tracked but not detected particles, add empty mask and contour to Blob.
+        # Case 3: For the tracked but not detected particles, add empty mask and contour to Blob.
         for i in range(boxlen, len(blob_ind)):
             if blob_ind[i] < self.blolen:
                 ind = blob_ind[i]
@@ -272,6 +273,7 @@ class MOT:
         for ind in ind_del:
             self.blobs[ind].dead += 1
             if self.blobs[ind].dead > MOT.UNDETECTION_THRESHOLD:
+                # Keep trajectory alive for UNDETECTION_THRESHOLD to deal with flickering phenomenon.
                 #self.blobs_all.append(self.blobs[ind])
                 _blob = self.blobs.pop(ind)
                 # Remove the last frame id from the frame list, so only two undetected frames
