@@ -65,6 +65,7 @@ class Particle:
             self.contour_area = round(cv.contourArea(self.contour))
             self.contour_centroid = get_contour_center(self.contour)
         else:
+            # When contour is empty.
             self.cnt_bbox_area = -1
             self.contour_area = -1
             self.contour_centroid = None
@@ -260,4 +261,4 @@ class Particle:
         return string
 
     def __repr__(self) -> str:
-        return "Particle: particle identified in 2D image"
+        return "Particle (x, y, w, h): {:.2d} {:.2d} {:.2d} {:.2d}".format(*self.position, *self.bbox)

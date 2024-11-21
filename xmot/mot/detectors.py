@@ -9,8 +9,8 @@ import pickle
 from pathlib import Path
 from typing import List, Dict, Tuple
 
+from xmot import config
 from xmot.logger import Logger
-from xmot.config import AREA_THRESHOLD
 from xmot.mot.utils import drawBox, areaBbox
 from xmot.utils.image_utils import get_contour_center
 
@@ -167,7 +167,7 @@ class GMM:
 
     def __init__(self, images: List[np.ndarray], train_images: List[np.ndarray] = None,
                  orig_images: List[np.ndarray] = None, crop: List[int] = None,
-                 varThreshold=16, area_threshold=AREA_THRESHOLD):
+                 varThreshold=16, area_threshold=config.AREA_THRESHOLD):
         """
         Attributes:
             images         : List       List of frames for prediction. These images are the ones
@@ -196,6 +196,8 @@ class GMM:
 
         #self.it_closing = it_closing
         self.area_threshold = area_threshold
+        if self.area_threshold != config.AREA_THRESHOLD: # Overwrite AREA_THRESHOLD with user-given value
+            config.AREA_THRESHOLD = self.area_threshold
         self.crop = crop
         #if history == -1:
         #    history = int(len(images) / 2) # Default history separate

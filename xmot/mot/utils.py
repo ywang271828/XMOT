@@ -574,7 +574,7 @@ def pillow_to_opencv(pil_image) -> np.ndarray[np.uint8]:
 
 
 def draw_dashed_rectangle(img: np.ndarray[np.uint8], top_left, bottom_right, color=(0, 0, 0),
-                          dash_length=2, gap_length=1, thickness=1, inplace=True) -> np.ndarray[np.uint8]:
+                          dash_length=2, gap_length=3, thickness=1, inplace=True) -> np.ndarray[np.uint8]:
     """
     Draws a dashed rectangle on an OpenCV image.
 

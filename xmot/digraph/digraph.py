@@ -39,7 +39,7 @@ class Digraph:
         self.__out_nodes = {} # "node: [nodes]" pair. The value list contains nodes that
                               # the key node has outgoing edges pointing to.
 
-    def add_video(self, particles):
+    def add_video(self, particles: List[Particle]):
         """Load particles of video into digraph.
 
         Args:
@@ -49,7 +49,7 @@ class Digraph:
             if p not in self.ptcls:
                 self.ptcls.append(p)
             for traj in self.trajs:
-                if p.id == traj.id:
+                if p.get_id() == traj.id:
                     # Note: trajectory attributes: start_node, end_node and kalmanfilter
                     # are still None.
                     #traj.add_particle(p)
@@ -73,6 +73,20 @@ class Digraph:
         # itself in directly preceding frame. So the "close in time and space" criterion of
         # merging might not work. (Or perhaps we can keep the trajectories that cannot merge).
         #self.__merge_short_trajs()
+
+        if len(self.trajs) == 0: # No particles detected in the video
+            return
+        # Check trajectories and break up the ones that should be separated
+        # After this sanity check, trajectory id does not necessarily align with the chronological
+        # order of start time.
+
+        max_id = max([t.get_id() for t in self.trajs])
+        for traj in self.trajs.copy(): # Avoid index shifting bug
+            new_traj = Trajectory.break_trajectory(traj)
+            if new_traj is not None:
+                self.trajs.append(new_traj)
+                new_traj.set_id(max_id + 1) # set id for trajectory and underlying particles
+                max_id += 1
 
         # Attach a start node and end node to each of the trajectory
         for traj in self.trajs:
@@ -220,8 +234,8 @@ class Digraph:
 
         for i in range(0, len(self.trajs)):
             # Can't detect event at the start of a video. <TODO> Is this true?
-            if self.trajs[i].get_start_time() == 0:
-                continue
+            # if self.trajs[i].get_start_time() == 0:
+            #     continue
             for j in range(i + 1, len(self.trajs)):
                 # t_j always starts no ealier than t_i.
                 t_i = self.trajs[i]
@@ -789,7 +803,7 @@ class Digraph:
         cv.putText(
             img, str(traj.get_id()),
             (int(_bbox_torch[2] + 5), int(_bbox_torch[1] - 5)),
-            cv.FONT_HERSHEY_SIMPLEX, fontScale=0.75, color=(0, 0, 255), # BGR
+            cv.FONT_HERSHEY_SIMPLEX, fontScale=0.5, color=(0, 0, 255), # BGR
             thickness=1, lineType=cv.LINE_AA
         )
 
