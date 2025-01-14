@@ -99,29 +99,34 @@ class Trajectory:
         particles: List[Particle] = traj.get_particles()
         change_ratios = []
         change_values = []
+        valid_indices = []
         for i in range(0, len(particles) - 1):
-            size_i = particles[i].get_size() # Guaranteed to have a non-zero size.
+            size_i = particles[i].get_size()
+            if size_i == 0:  # Avoid divide by zero.
+                continue
+            valid_indices.append(i)
+
             size_j = particles[i+1].get_size()
             change_ratios.append(abs((size_i - size_j) / size_i))
             change_values.append(abs(size_i - size_j))
 
         indices = [
             i
-            for i, (ratio, value) in enumerate(zip(change_ratios, change_values))
+            for i, ratio, value in zip(valid_indices, change_ratios, change_values)
             if ratio > 0.5 and value > 50
         ]
 
-        # time_frames[0] is the time point to break the trajectory
+        # time_frames[0] will be the time point to break the trajectory
         time_frames = [particles[i+1].get_time_frame() for i in indices]
 
         # Criteria:
         # - Change over 50% and with an absolute change above 50 pixel**2.
         # - Have one and only one of such case.
-        # - If breakup, both the old and new trajectory will have significant life time (more than 2 frames)
+        # - If breakup, both the old and new trajectory will have significant life time (more than 3 frames)
         if (
             len(indices) == 1 and
-            traj.get_end_time() - time_frames[0] > 2 and
-            time_frames[0] - traj.get_start_time() > 2 and
+            traj.get_end_time() - time_frames[0] > 3 and
+            time_frames[0] - traj.get_start_time() > 3 and
             traj.get_particle_by_time(time_frames[0]) is not None
             #not traj.get_particle_by_time(time_frames[0]).close_to_edge()
         ):

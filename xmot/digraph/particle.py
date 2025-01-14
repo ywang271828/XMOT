@@ -195,11 +195,16 @@ class Particle:
 
         Return the contour area when contour is not None. Otherwise, return the inscribed ellipse
         of the bbox predicted from Kalman-filter.
+
+        Note: This function might return zero since we allow temporal disappearance of particle in
+        a trajectory. Its width or height might be zero by Kalman filter adjustment.
         """
         if self.contour is not None:
             size = self.get_area_contour()
         else:
-            # Area of inscribed ellipse.
+            # Area of inscribed ellipse of the bbox.
+            # Note: bbox used here is most likely predicted by Kalman filters (since contour
+            # is None) and has a zero value (since Kalman filter track the change of bbox size).
             size = math.pi * (self.bbox[0] / 2) * (self.bbox[1] / 2)
         return size
 

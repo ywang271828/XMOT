@@ -28,19 +28,25 @@ THRESHOLD_CIRCULAR_DEGREE = 0.5 # Threshold of param2 in Hough Circle transforma
 
 def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, padding=PADDING,
                  outdir=None, prefix=None) -> str:
+
     # Padding borders with white stripes to make sure at least one contour can be detected.
     img_crop = crop_particle(particle, img, buffer=0)
 
     # If particle width and height are 0, the padded area will be a (4 x 5) image.
-    if img_crop.shape[0] * img_crop.shape[1] == 2*PADDING * (2*PADDING + 1):
-        Logger.error("Cannot detect shape for particle with zero-sized bbox. " +
-                        "Frame: {:d}; ID: {:d}.".format(particle.get_time_frame(), particle.get_id()))
+    if (
+        particle.get_size() == 0
+        or img_crop.size == 0  # When particle is out of the view, predicted by Kalman filter.
+        or img_crop.shape[0] * img_crop.shape[1] == 2*PADDING * (2*PADDING + 1)
+    ):
+        Logger.warning("Cannot detect shape for particle with zero-sized bbox. " +
+                       "Frame: {:d}; ID: {:d}.".format(particle.get_time_frame(), particle.get_id()))
         shape = "undetermined_empty_crop"
+        return shape
 
     # Threshold
     blocksize = max(math.ceil(np.average(img_crop.shape)) // 2 * 2 + 1, 31) # Round to the next odd integer.
     img_threshed = adaptive_threshold(img_crop, cv.ADAPTIVE_THRESH_MEAN_C, blocksize = blocksize,
-                                    offset = 2, is_grayscale = True)
+                                      offset = 2, is_grayscale = True)
 
     # Padding to prevent contour touching boundaries
     img_edited = cv.copyMakeBorder(img_threshed, padding, padding, padding, padding, cv.BORDER_CONSTANT, value=255)
@@ -65,7 +71,8 @@ def detect_shape(particle: Particle, img, a2p_threshold=THRESHOLD_A2P_RATIO, pad
         cv.imwrite(f"{outdir}/{prefix}_contoured_len_{len(contours)}.png", _img_contoured)
 
     # There are only noises in the crop. The bbox might not enclosing any particle and is
-    # fictitious from Kalman Filter. TODO: We need improve this.
+    # fictitious from Kalman Filter.
+    # TODO: We need improve this.
     if len(contours) == 0:
         shape = "undetermined_no_particle"
         _img_debug = img_threshed
