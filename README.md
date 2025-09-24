@@ -3,17 +3,22 @@
 A library for automatic quantitative characterization of X-ray Phase Contrasting Imaging videos of combustions.
 
 ## Installation
-We recommend using the library in a Unix/Linux system. For Windows users, the `Windowns Subsystem for Linux (WSL)` can be easily installed following the instructions [here](https://learn.microsoft.com/en-us/windows/wsl/install).
+We recommend using the library in a Unix/Linux system. For Windows users, the `Windows Subsystem for Linux (WSL)` can be easily installed following the instructions [here](https://learn.microsoft.com/en-us/windows/wsl/install).
 
 1. Install `git` if you don't already have one. For example, on Ubuntu,
     ```bash
     sudo apt-get install git
     ```
 
-2. Download the `xmot` source code.
+2. Clone the repository with submodules (required for the example data for the demo script).
+    Recommended:
     ```bash
-    git clone https://github.com/ywang271828/XMOT.git
+    git clone --recurse-submodules https://github.com/ywang271828/XMOT.git
     cd XMOT
+    ```
+    If you already cloned without submodules, run:
+    ```bash
+    git submodule update --init --recursive
     ```
 
 3. Install Poetry (if not already installed)
@@ -60,27 +65,37 @@ We recommend using the library in a Unix/Linux system. For Windows users, the `W
     # In the python prompt
     > import xmot
     ```
+6. If you plan to run the example, fetch the example data stored via Git Large File Storage (LFS) in the submodule.
+
+   (The example data is store as a submodule since GitHub forbid LFS on public forks.)
+   ```bash
+   git lfs install
+   git submodule foreach 'git lfs pull'
+   ```
+
 
 ## Usage
 The workflow for analyzing a video with this package can be roughly divided into three steps:
 1.  Detecting particles in each frame of the video
 2.  Building trajectories from detections in each frame
-2.  Analyzing trajetories to extract statistics and events;
+2.  Analyzing trajectories to extract statistics and events;
 
-We provide a simple example in the `examples/GMM` folder. Below we explain how to run it and what outputs to expect.
+We provide a simple example in the `examples/GMM` folder. The example data are tracked as a submodule at `examples/GMM/xmot_example_data`. Below we explain how to run it and what outputs to expect.
 
 1. Unzip example images.
 
     The example images are provided in `.zip` format on GitHub for easier version control.
+    The demo script is configured to read the data directly from the xmot_example_data submodule.
+
+    ```bash
+    cd examples/GMM/xmot_example_data
+    unzip frames_orig.zip
+    unzip frames_brightfield_subtracted.zip
+    cd ..
+    ```
     After unzipping, you will find two datasets:
     * Original XPCI frames
     * Frames pre-processed with the background subtraction procedure described in the paper
-
-    ```bash
-    cd XMOT/examples/GMM
-    unzip frames_orig.zip
-    unzip frames_brightfield_subtracted.zip
-    ```
 
 2. Run the demo script
     ```
@@ -110,4 +125,4 @@ We provide a simple example in the `examples/GMM` folder. Below we explain how t
 
     Since many of the outputs are intended for debugging and reference, only a subset of frames are
     drawn. You can control this by adjusting the parameter debug_image_interval at the top of
-    `demo.py.` A smaller interval will generate more debug images.
+    `demo.py.` A smaller interval generates more debug images.

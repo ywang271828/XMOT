@@ -14,8 +14,8 @@ history = -1
 distance = -1
 
 #### Input and Output. You can change to your own paths.
-orig_images_dir = "./frames_orig"
-bf_images_dir = "./frames_brightfield_subtracted"
+orig_images_dir = "xmot_example_data/frames_orig"  # Point to the submodule folder.
+bf_images_dir = "xmot_example_data/frames_brightfield_subtracted" # Point to the submodule folder.
 outdir = "./output"
 output_name = "./digraph.txt"
 debug_image_interval = 25  # how often a debug image should be drawn.
