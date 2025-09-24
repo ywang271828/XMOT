@@ -139,7 +139,7 @@ class Trajectory:
 
         # From break_time onwards, particles belong to the new trajectory.
         break_time = particles[indices[0] + 1].get_time_frame()
-        Logger.basic(f"Breaking up trajectory-{traj.get_id()} at {break_time}")
+        Logger.debug(f"Breaking up trajectory-{traj.get_id()} at {break_time}")
 
         # Note: shallow copy. We deliberately keep the same object references.
         new_traj = Trajectory(id = -1, ptcls=particles[indices[0] + 1:])
@@ -506,7 +506,7 @@ class Trajectory:
             self.sort_particles() # Internally already called self.reset()
 
         if len(self.ptcls) <= 1:
-            Logger.warning(f"Calculating velocities for trajectory-{self.id} with "
+            Logger.debug(f"Calculating velocities for trajectory-{self.id} with "
                            f"{len(self.ptcls)} particles.")
             return False
 

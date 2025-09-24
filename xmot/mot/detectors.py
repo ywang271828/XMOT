@@ -209,7 +209,7 @@ class GMM:
                          skip_nested = True) -> Tuple[Dict[int, List[int]], Dict[int, List[np.ndarray]]]:
         """
         Train the background using a batch of frames in the future and then detect the current
-        batch of frames. It separate the images under detection with the background as far as
+        batch of frames. It separates the images under detection with the background as far as
         possible, to prevent slowly moving objects to be completely shadowed by the background
         detected in the GMM model.
 
